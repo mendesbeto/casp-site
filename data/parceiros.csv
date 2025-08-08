@@ -1,0 +1,3 @@
+PARCEIRO_ID,NOME_PARCEIRO,CONTATO_NOME,EMAIL,TELEFONE,CONVENIO_ID,DETALHES,STATUS,ENDERECO,WEBSITE,REDES_SOCIAIS
+1,"Clínica Bem Viver","Ana Paula","contato@clinicabemviver.com","(11) 5555-1234",1,"Descontos de 30% em consultas e 20% em exames.","ATIVO","Rua da Saúde, 456, São Paulo - SP","https://clinicabemviver.com",""
+2,"Hospital Cura Certa","Carlos Lima","parcerias@curacerta.com","(11) 5555-5678",1,"Internação com 15% de desconto.","ATIVO","Av. dos Médicos, 789, São Paulo - SP","https://curacerta.com",""

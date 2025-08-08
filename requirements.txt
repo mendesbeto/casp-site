@@ -1,0 +1,8 @@
+streamlit
+pandas
+bcrypt
+fpdf2
+streamlit-quill
+openpyxl
+matplotlib
+streamlit-carousel

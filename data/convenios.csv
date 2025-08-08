@@ -1,0 +1,6 @@
+CONVENIO_ID,NOME_CONVENIO,DESCRICAO,ICON_URL,STATUS,IMAGEM_URL,DESTAQUE,TIPO_SERVICO
+1,Saúde Total,Plano de saúde completo com cobertura nacional e ampla rede de hospitais e laboratórios.,uploads/convenios/2024263_20250802232820.png,ATIVO,uploads/convenios/60e4b11026215d64aa2c686b_Plano de saúde compulsório ou livre adesão - Pipo Saúde_20250802232820.png,True,Saúde
+2,Odonto Sorriso,Cuide do seu sorriso com os melhores dentistas da região. Planos para toda a família.,https://img.icons8.com/plasticine/100/tooth.png,ATIVO,uploads/convenios/odontologia1_20250802235418.jpg,True,Saúde
+3,Educa Mais,"Descontos em universidades, escolas de idiomas e cursos profissionalizantes. Invista no seu futuro!",https://img.icons8.com/plasticine/100/book.png,ATIVO,uploads/convenios/2149241014_20250802235845.jpg,True,Educação
+4,Gym Fitness,Acesso a uma rede de academias parceiras com descontos exclusivos na mensalidade.,https://img.icons8.com/plasticine/100/dumbbell.png,ATIVO,uploads/convenios/premium_photo-1661265933107-85a5dbd815af_20250803000034.jpeg,True,Bem-Estar
+5,UNIMED,Plano de com beneficios exclusivos,uploads/convenios/images-unimed_20250730022752.png,ATIVO,uploads/convenios/10424520230320641862d5198f0_20250730022752.png,True,Plano de Saúde

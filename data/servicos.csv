@@ -1,0 +1,17 @@
+SERVICO_ID,TIPO_SERVICO,DESCRICAO_SERVICO,VALOR_MENSAL,VALOR_ADICIONAL,CUPOM_MESAL,CUPOM_SEMESTRAL,CUPOM_ANUAL
+1,Convenios + Plano de Saúde,"""As mensalidades serão de r$ 25 com desconto de 20% para pagamento anual e 10% para pagamento semestral ou seja a pessoa que pagar em um pagamento único as 12 parcelas pagará o valor de 240.
+
+E para a pessoa que pagar em um pagamento único seis parcelas pagará o valor de 135 reais.
+
+Porém as pessoas que aderirem ao plano de saúde Unimed cop Life, não pagarão r$ 25 por mês mas terão o benefício de pagar r$ 12 por titular mais r$ 3 por dependente.
+
+A pessoa que não aderir ao plano de saúde da associação casp pagará o valor de r$ 25 E terá acesso a todos os benefícios e convênios com os descontos proporcionais.
+""",15.0,3.0,0.0,10.0,20.0
+2,Convenios,"""As mensalidades serão de r$ 25 com desconto de 20% para pagamento anual e 10% para pagamento semestral ou seja a pessoa que pagar em um pagamento único as 12 parcelas pagará o valor de 240.
+
+E para a pessoa que pagar em um pagamento único seis parcelas pagará o valor de 135 reais.
+
+Porém as pessoas que aderirem ao plano de saúde Unimed cop Life, não pagarão r$ 25 por mês mas terão o benefício de pagar r$ 12 por titular mais r$ 3 por dependente.
+
+A pessoa que não aderir ao plano de saúde da associação casp pagará o valor de r$ 25 E terá acesso a todos os benefícios e convênios com os descontos proporcionais.
+""",25.0,0.0,0.0,10.0,20.0
