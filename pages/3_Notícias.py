@@ -1,122 +1,76 @@
 import streamlit as st
 import pandas as pd
 import math
-import os
 from datetime import datetime
+from social_utils import display_social_media_links
+from auth import get_db_connection, insert_record, delete_record, get_max_id
 
+display_social_media_links()
 st.set_page_config(page_title="Notícias", layout="wide")
 
+# --- FUNÇÕES DE BANCO DE DADOS ---
 @st.cache_data
-def carregar_dados_noticias():
-    return pd.read_csv('data/noticias.csv')
-
-@st.cache_data
-def carregar_dados_galeria():
-    filepath = 'data/galeria_fotos.csv'
-    if not os.path.exists(filepath) or os.path.getsize(filepath) == 0:
-        return pd.DataFrame(columns=['FOTO_ID', 'NOTICIA_ID', 'IMAGEM_URL', 'LEGENDA'])
-    return pd.read_csv(filepath)
-
-@st.cache_data
-def carregar_dados_comentarios():
-    filepath = 'data/comentarios.csv'
-    if not os.path.exists(filepath) or os.path.getsize(filepath) == 0:
-        return pd.DataFrame(columns=['COMENTARIO_ID', 'NOTICIA_ID', 'USER_ID', 'NOME_USUARIO', 'COMENTARIO', 'TIMESTAMP', 'STATUS'])
-    return pd.read_csv(filepath)
-
-@st.cache_data
-def carregar_dados_likes():
-    """Carrega os dados de curtidas do CSV."""
-    filepath = 'data/noticia_likes.csv'
-    if not os.path.exists(filepath) or os.path.getsize(filepath) == 0:
-        return pd.DataFrame(columns=['LIKE_ID', 'NOTICIA_ID', 'USER_ID'])
-    return pd.read_csv(filepath)
-
-@st.cache_data
-def carregar_tag_follows():
-    """Carrega os dados de tags seguidas."""
-    filepath = 'data/tag_follows.csv'
-    if not os.path.exists(filepath) or os.path.getsize(filepath) == 0:
-        return pd.DataFrame(columns=['FOLLOW_ID', 'USER_ID', 'TAG_NAME'])
-    return pd.read_csv(filepath)
-
-def salvar_tag_follows(user_id, tags_a_seguir):
-    """Salva as preferências de tags de um usuário."""
-    # Esta função será implementada no passo 5
-    pass
+def carregar_dados_db(table_name):
+    """Carrega uma tabela inteira do banco de dados para um DataFrame."""
+    conn = get_db_connection()
+    try:
+        df = pd.read_sql_query(f"SELECT * FROM {table_name}", conn)
+        return df
+    except Exception as e:
+        st.error(f"Erro ao carregar dados da tabela {table_name}: {e}")
+        return pd.DataFrame()
+    finally:
+        conn.close()
 
 def salvar_like(noticia_id, user_id):
-    """Salva um novo like no CSV, lendo os dados mais recentes."""
-    filepath = 'data/noticia_likes.csv'
-    try:
-        df_likes = pd.read_csv(filepath)
-    except (FileNotFoundError, pd.errors.EmptyDataError):
-        df_likes = pd.DataFrame(columns=['LIKE_ID', 'NOTICIA_ID', 'USER_ID'])
-
-    new_id = 1
-    if not df_likes.empty:
-        new_id = df_likes['LIKE_ID'].max() + 1
-
-    novo_like = pd.DataFrame([{'LIKE_ID': new_id, 'NOTICIA_ID': noticia_id, 'USER_ID': user_id}])
-    df_final = pd.concat([df_likes, novo_like], ignore_index=True)
-    df_final.to_csv(filepath, index=False)
+    """Salva um novo like no banco de dados."""
+    new_id = get_max_id('noticia_likes', 'LIKE_ID') + 1
+    new_like = {
+        'LIKE_ID': int(new_id),
+        'NOTICIA_ID': noticia_id,
+        'USER_ID': user_id
+    }
+    insert_record('noticia_likes', new_like)
     st.cache_data.clear()
 
 def remover_like(noticia_id, user_id):
-    """Remove um like do CSV, lendo os dados mais recentes."""
-    filepath = 'data/noticia_likes.csv'
-    df_likes = pd.read_csv(filepath)
-    index_to_remove = df_likes[(df_likes['NOTICIA_ID'] == noticia_id) & (df_likes['USER_ID'] == user_id)].index
-    df_likes.drop(index_to_remove, inplace=True)
-    df_likes.to_csv(filepath, index=False)
+    """Remove um like do banco de dados."""
+    delete_record('noticia_likes', {'NOTICIA_ID': noticia_id, 'USER_ID': user_id})
     st.cache_data.clear()
 
 def salvar_tag_follows(user_id, tags_a_seguir):
     """Salva as preferências de tags de um usuário, substituindo as antigas."""
-    filepath = 'data/tag_follows.csv'
-    try:
-        df_follows = pd.read_csv(filepath)
-    except (FileNotFoundError, pd.errors.EmptyDataError):
-        df_follows = pd.DataFrame(columns=['FOLLOW_ID', 'USER_ID', 'TAG_NAME'])
-
-    # Remove os follows antigos do usuário
-    df_follows = df_follows[df_follows['USER_ID'] != user_id]
-
-    # Adiciona os novos follows
-    novos_follows_df = pd.DataFrame({
-        'USER_ID': [user_id] * len(tags_a_seguir),
-        'TAG_NAME': tags_a_seguir
-    })
-    df_final = pd.concat([df_follows, novos_follows_df], ignore_index=True)
-    df_final.reset_index(drop=True, inplace=True)
-    df_final['FOLLOW_ID'] = df_final.index + 1
-    df_final.to_csv(filepath, index=False)
+    delete_record('tag_follows', {'USER_ID': user_id})
+    for tag in tags_a_seguir:
+        new_id = get_max_id('tag_follows', 'FOLLOW_ID') + 1
+        new_follow = {
+            'FOLLOW_ID': int(new_id),
+            'USER_ID': user_id,
+            'TAG_NAME': tag
+        }
+        insert_record('tag_follows', new_follow)
     st.cache_data.clear()
 
 def salvar_comentario(noticia_id, user_id, nome_usuario, comentario):
-    """Salva um novo comentário no CSV com status PENDENTE."""
-    filepath = 'data/comentarios.csv'
-    df_comentarios = carregar_dados_comentarios()
-
-    new_id = 1
-    if not df_comentarios.empty:
-        new_id = df_comentarios['COMENTARIO_ID'].max() + 1
-
-    novo_comentario = pd.DataFrame([{
-        'COMENTARIO_ID': new_id,
+    """Salva um novo comentário no banco de dados com status PENDENTE."""
+    new_id = get_max_id('comentarios', 'COMENTARIO_ID') + 1
+    novo_comentario = {
+        'COMENTARIO_ID': int(new_id),
         'NOTICIA_ID': noticia_id,
         'USER_ID': user_id,
         'NOME_USUARIO': nome_usuario,
         'COMENTARIO': comentario,
         'TIMESTAMP': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         'STATUS': 'PENDENTE'
-    }])
-    novo_comentario.to_csv(filepath, mode='a', header=df_comentarios.empty, index=False)
+    }
+    insert_record('comentarios', novo_comentario)
 
-df_noticias = carregar_dados_noticias()
-df_galeria = carregar_dados_galeria()
-df_comentarios = carregar_dados_comentarios()
-df_likes = carregar_dados_likes()
+# --- CARREGAMENTO DOS DADOS ---
+df_noticias = carregar_dados_db('noticias')
+df_galeria = carregar_dados_db('galeria_fotos')
+df_comentarios = carregar_dados_db('comentarios')
+df_likes = carregar_dados_db('noticia_likes')
+df_tag_follows = carregar_dados_db('tag_follows')
 
 st.title("Mural de Notícias")
 
@@ -125,11 +79,9 @@ noticias_publicadas = df_noticias[df_noticias['STATUS'] == 'PUBLICADO'].sort_val
 # --- LÓGICA DE FILTRAGEM POR TAG ---
 all_tags = set()
 if 'TAGS' in noticias_publicadas.columns:
-    # Drop NaNs, split by comma, flatten the list of lists, strip whitespace, and get unique tags
     tags_series = noticias_publicadas['TAGS'].dropna().str.split(',')
     all_tags = sorted(list(set([tag.strip() for sublist in tags_series for tag in sublist if tag.strip()])))
 
-# Widget de filtro
 if all_tags:
     selected_tags = st.multiselect("Filtrar por tags:", options=all_tags)
 else:
@@ -139,8 +91,7 @@ if 'member_logged_in' in st.session_state and st.session_state['member_logged_in
     st.divider()
     with st.expander("🔔 Gerenciar notificações por tag"):
         user_id = st.session_state['member_info']['ID']
-        df_follows = carregar_tag_follows()
-        tags_seguidas = df_follows[df_follows['USER_ID'] == user_id]['TAG_NAME'].tolist()
+        tags_seguidas = df_tag_follows[df_tag_follows['USER_ID'] == user_id]['TAG_NAME'].tolist()
 
         novas_tags_seguidas = st.multiselect(
             "Selecione as tags que você deseja seguir para receber novidades:",
@@ -153,7 +104,6 @@ if 'member_logged_in' in st.session_state and st.session_state['member_logged_in
             st.success("Preferências salvas!")
             st.rerun()
 
-# Filtrar notícias se alguma tag for selecionada
 if selected_tags:
     def has_tags(row_tags):
         if pd.isna(row_tags):
@@ -165,7 +115,6 @@ else:
     noticias_filtradas = noticias_publicadas
 
 if not noticias_publicadas.empty:
-    # --- LÓGICA DE PAGINAÇÃO ---
     if 'page_num' not in st.session_state:
         st.session_state.page_num = 1
 
@@ -173,7 +122,6 @@ if not noticias_publicadas.empty:
     total_noticias = len(noticias_filtradas)
     total_paginas = math.ceil(total_noticias / ITENS_POR_PAGINA)
 
-    # Garante que o número da página seja válido
     if st.session_state.page_num > total_paginas:
         st.session_state.page_num = total_paginas
     if st.session_state.page_num < 1:
@@ -183,7 +131,6 @@ if not noticias_publicadas.empty:
     end_idx = start_idx + ITENS_POR_PAGINA
     noticias_para_exibir = noticias_filtradas.iloc[start_idx:end_idx]
 
-    # --- EXIBIÇÃO DAS NOTÍCIAS ---
     for noticia in noticias_para_exibir.itertuples():
         with st.container(border=True):
             col1, col2 = st.columns([1, 3])
@@ -196,12 +143,10 @@ if not noticias_publicadas.empty:
                 st.caption(f"Publicado em: {pd.to_datetime(noticia.DATA).strftime('%d/%m/%Y')}")
                 st.markdown(noticia.CONTEUDO, unsafe_allow_html=True)
             
-            # Exibe as tags do artigo
             if 'TAGS' in noticia and pd.notna(noticia.TAGS):
                 tags = [tag.strip() for tag in noticia.TAGS.split(',') if tag.strip()]
                 st.write(" ".join([f"`#{tag}`" for tag in tags]))
 
-            # --- SEÇÃO DE LIKES ---
             likes_desta_noticia = df_likes[df_likes['NOTICIA_ID'] == noticia.ID]
             like_count = len(likes_desta_noticia)
 
@@ -224,19 +169,16 @@ if not noticias_publicadas.empty:
             with col_like2:
                 st.markdown(f"&nbsp; **{like_count}** curtida(s)")
             
-            # --- EXIBIÇÃO DA GALERIA ---
             fotos_da_noticia = df_galeria[df_galeria['NOTICIA_ID'] == noticia.ID]
             if not fotos_da_noticia.empty:
                 st.divider()
                 st.subheader("Galeria de Fotos")
                 
-                # Define o número de colunas para a galeria
                 num_colunas_galeria = 4
                 cols_galeria = st.columns(num_colunas_galeria)
                 for i, foto in enumerate(fotos_da_noticia.itertuples()):
                     cols_galeria[i % num_colunas_galeria].image(foto.IMAGEM_URL, caption=foto.LEGENDA, use_container_width=True)
 
-            # --- SEÇÃO DE COMENTÁRIOS ---
             st.divider()
             st.subheader("Comentários")
 
@@ -248,7 +190,6 @@ if not noticias_publicadas.empty:
                     st.write(f"**{comentario['NOME_USUARIO']}** em {pd.to_datetime(comentario['TIMESTAMP']).strftime('%d/%m/%Y')}:")
                     st.info(f"{comentario['COMENTARIO']}")
 
-            # Formulário para novo comentário (apenas para usuários logados)
             if 'member_logged_in' in st.session_state and st.session_state['member_logged_in']:
                 with st.form(key=f"form_comentario_{noticia.ID}", clear_on_submit=True):
                     novo_comentario_texto = st.text_area("Deixe seu comentário:", height=100, label_visibility="collapsed", placeholder="Deixe seu comentário...")
@@ -260,9 +201,8 @@ if not noticias_publicadas.empty:
             else:
                 st.info("Você precisa estar logado para comentar. [Faça o login aqui](/Área_do_Membro)")
 
-        st.write("") # Adiciona um espaço vertical
+        st.write("")
 
-    # --- CONTROLES DE PAGINAÇÃO ---
     if total_paginas > 1:
         st.divider()
         col1, col2, col3 = st.columns([2, 1, 2])

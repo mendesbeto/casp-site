@@ -1,29 +1,33 @@
+
 import streamlit as st
 import pandas as pd
-import os
 from datetime import datetime, timedelta
+from social_utils import display_social_media_links
+from auth import get_db_connection, insert_record, get_max_id
 
+display_social_media_links()
 st.set_page_config(page_title="Mural de Classificados", layout="wide")
 
+# --- FUNÇÕES DE BANCO DE DADOS ---
 @st.cache_data
 def carregar_classificados():
-    """Carrega os dados de classificados do CSV."""
-    filepath = 'data/classificados.csv'
-    if not os.path.exists(filepath) or os.path.getsize(filepath) == 0:
-        return pd.DataFrame(columns=['CLASSIFICADO_ID', 'USER_ID', 'NOME_USUARIO', 'TITULO', 'DESCRICAO', 'CONTATO', 'DATA_CRIACAO', 'STATUS', 'CATEGORIA', 'DESTAQUE'])
-    return pd.read_csv(filepath)
+    """Carrega os dados de classificados do banco de dados."""
+    conn = get_db_connection()
+    try:
+        df = pd.read_sql_query("SELECT * FROM classificados", conn)
+        return df
+    except Exception as e:
+        st.error(f"Erro ao carregar classificados: {e}")
+        return pd.DataFrame()
+    finally:
+        conn.close()
 
 def salvar_classificado(user_id, nome_usuario, titulo, descricao, contato, categoria):
     """Salva um novo classificado com status PENDENTE."""
-    filepath = 'data/classificados.csv'
-    df_classificados = carregar_classificados()
-
-    new_id = 1
-    if not df_classificados.empty:
-        new_id = df_classificados['CLASSIFICADO_ID'].max() + 1
-
-    novo_classificado = pd.DataFrame([{
-        'CLASSIFICADO_ID': new_id,
+    new_id = get_max_id('classificados', 'CLASSIFICADO_ID') + 1
+    
+    novo_classificado = {
+        'CLASSIFICADO_ID': int(new_id),
         'USER_ID': user_id,
         'NOME_USUARIO': nome_usuario,
         'TITULO': titulo,
@@ -33,16 +37,17 @@ def salvar_classificado(user_id, nome_usuario, titulo, descricao, contato, categ
         'STATUS': 'PENDENTE',
         'CATEGORIA': categoria,
         'DESTAQUE': False
-    }])
-    novo_classificado.to_csv(filepath, mode='a', header=df_classificados.empty, index=False)
+    }
+    insert_record('classificados', novo_classificado)
     st.cache_data.clear()
+
+# --- CONFIGURAÇÕES ---
+CATEGORIAS_CLASSIFICADOS = ["Venda", "Serviço", "Aluguel", "Doação", "Outros"]
+LIMITE_ANUNCIOS_POR_MEMBRO = 3
+DIAS_EXPIRACAO_ANUNCIO = 30
 
 st.title("📢 Mural de Classificados")
 st.write("Um espaço para membros anunciarem produtos e serviços.")
-
-CATEGORIAS_CLASSIFICADOS = ["Venda", "Serviço", "Aluguel", "Doação", "Outros"]
-LIMITE_ANUNCIOS_POR_MEMBRO = 3 # Define o limite de anúncios ativos/pendentes por membro
-DIAS_EXPIRACAO_ANUNCIO = 30 # Define em quantos dias um anúncio expira
 
 # --- Formulário para Novo Anúncio ---
 if 'member_logged_in' in st.session_state and st.session_state['member_logged_in']:
@@ -55,7 +60,7 @@ if 'member_logged_in' in st.session_state and st.session_state['member_logged_in
     num_anuncios = len(anuncios_do_usuario)
 
     if num_anuncios >= LIMITE_ANUNCIOS_POR_MEMBRO:
-        st.warning(f"Você atingiu o seu limite de {LIMITE_ANUNCIOS_POR_MEMBRO} anúncios ativos ou pendentes. Para postar um novo, um anúncio antigo precisa ser removido ou expirar.")
+        st.warning(f"Você atingiu o seu limite de {LIMITE_ANUNCIOS_POR_MEMBRO} anúncios ativos ou pendentes.")
     else:
         with st.expander(f"➕ Publicar um novo anúncio ({num_anuncios}/{LIMITE_ANUNCIOS_POR_MEMBRO} publicados)"):
             with st.form("form_novo_classificado", clear_on_submit=True):
@@ -76,7 +81,7 @@ else:
 
 st.divider()
 
-# --- Barra de Busca e Exibição dos Anúncios Ativos ---
+# --- Barra de Busca e Exibição ---
 st.header("Anúncios Ativos")
 
 col1, col2 = st.columns(2)
@@ -85,33 +90,25 @@ selected_category = col2.selectbox("Filtrar por categoria:", ["Todas"] + CATEGOR
 
 df_classificados = carregar_classificados()
 
-# --- LÓGICA DE EXPIRAÇÃO ---
-# Converte a data de criação para o formato datetime
 df_classificados['DATA_CRIACAO'] = pd.to_datetime(df_classificados['DATA_CRIACAO'])
-# Define a data limite para um anúncio ser considerado válido
 data_limite = datetime.now() - timedelta(days=DIAS_EXPIRACAO_ANUNCIO)
-# Filtra apenas anúncios ativos e que não expiraram
 df_classificados['DESTAQUE'] = df_classificados['DESTAQUE'].fillna(False)
 anuncios_validos = df_classificados[
     (df_classificados['STATUS'] == 'ATIVO') &
     (df_classificados['DATA_CRIACAO'] >= data_limite)
 ].sort_values(by="DATA_CRIACAO", ascending=False)
 
-# --- LÓGICA DE FILTRAGEM ---
 anuncios_para_exibir = anuncios_validos
 
-# Filtro por categoria
 if selected_category != "Todas":
     anuncios_para_exibir = anuncios_para_exibir[anuncios_para_exibir['CATEGORIA'] == selected_category]
 
-# Filtro por busca
 if search_term:
     anuncios_para_exibir = anuncios_para_exibir[
         anuncios_para_exibir['TITULO'].str.contains(search_term, case=False, na=False) |
         anuncios_para_exibir['DESCRICAO'].str.contains(search_term, case=False, na=False)
     ]
 
-# Separa os anúncios em destaque dos normais
 anuncios_destaque = anuncios_para_exibir[anuncios_para_exibir['DESTAQUE'] == True]
 anuncios_normais = anuncios_para_exibir[anuncios_para_exibir['DESTAQUE'] == False]
 
@@ -121,7 +118,6 @@ if anuncios_destaque.empty and anuncios_normais.empty:
     else:
         st.info("Nenhum anúncio ativo no momento.")
 else:
-    # Exibe os anúncios em destaque primeiro
     if not anuncios_destaque.empty:
         st.subheader("🌟 Anúncios em Destaque")
         for _, anuncio in anuncios_destaque.iterrows():
@@ -133,7 +129,6 @@ else:
                 st.success(f"**Contato:** {anuncio['CONTATO']}")
         st.divider()
 
-    # Exibe os anúncios normais
     for _, anuncio in anuncios_normais.iterrows():
         with st.container(border=True):
             st.subheader(anuncio['TITULO'])

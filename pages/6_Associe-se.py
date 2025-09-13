@@ -1,24 +1,29 @@
+
 import streamlit as st
 import pandas as pd
 from datetime import datetime
 import os
-
-# Importa a função de hash do nosso novo módulo
-from auth import hash_password
-# Importa utilitários
+from social_utils import display_social_media_links
+from auth import hash_password, insert_record, get_max_id, get_db_connection
 from file_utils import save_uploaded_file
 from pdf_utils import gerar_contrato_adesao_pdf
 
+display_social_media_links()
 st.set_page_config(page_title="Associe-se", layout="wide")
 
-# --- FUNÇÕES DE CARREGAMENTO DE DADOS ---
+# --- FUNÇÕES DE BANCO DE DADOS ---
 @st.cache_data
-def carregar_dados_institucionais():
-    return pd.read_csv('data/institucional.csv').iloc[0]
-
-@st.cache_data
-def carregar_servicos():
-    return pd.read_csv('data/servicos.csv')
+def carregar_dados_db(table_name):
+    """Carrega uma tabela inteira do banco de dados para um DataFrame."""
+    conn = get_db_connection()
+    try:
+        df = pd.read_sql_query(f"SELECT * FROM {table_name}", conn)
+        return df
+    except Exception as e:
+        st.error(f"Erro ao carregar dados da tabela {table_name}: {e}")
+        return pd.DataFrame()
+    finally:
+        conn.close()
 
 # --- FUNÇÕES DE CÁLCULO ---
 def calcular_preco_plano(servico, plano_key):
@@ -41,7 +46,7 @@ def calcular_preco_plano(servico, plano_key):
         "preco_por_mes": preco_total / meses
     }
 
-# --- CONFIGURAÇÕES DOS PLANOS (simplificado, pois os valores vêm do CSV) ---
+# --- CONFIGURAÇÕES DOS PLANOS ---
 PLANOS = {
     "MENSAL": {"nome": "Mensal", "meses": 1},
     "SEMESTRAL": {"nome": "Semestral", "meses": 6},
@@ -50,32 +55,19 @@ PLANOS = {
 
 # --- FUNÇÕES DE MANIPULAÇÃO DE DADOS ---
 def salvar_novo_membro(dados_membro):
-    """Salva os dados do novo membro no arquivo CSV."""
-    filepath = 'data/usuarios.csv'
-    cols = ['ID','NOME','CPF','EMAIL','CEP','LOGRADOURO','NUMERO','COMPLEMENTO','BAIRRO','CIDADE','ESTADO','SENHA_HASH','STATUS','DATA_CADASTRO','NIVEL_ACESSO','TOKEN_RECUPERACAO','DATA_EXPIRACAO_TOKEN', 'ULTIMO_ACESSO', 'PLANO_ESCOLHIDO', 'SERVICO_ESCOLHIDO', 'ADICIONAIS_NOMES', 'CONTRATO_ASSINADO_URL']
-    
-    try:
-        df_usuarios = pd.read_csv(filepath)
-        for col in cols:
-            if col not in df_usuarios.columns:
-                df_usuarios[col] = None
-    except (FileNotFoundError, pd.errors.EmptyDataError):
-        df_usuarios = pd.DataFrame(columns=cols)
-
-    new_id = (df_usuarios['ID'].max() + 1) if not df_usuarios.empty else 1
+    """Salva os dados do novo membro no banco de dados."""
+    new_id = get_max_id('usuarios', 'ID') + 1
     
     dados_membro['ID'] = new_id
     dados_membro['STATUS'] = 'PENDENTE'
     dados_membro['NIVEL_ACESSO'] = 'MEMBRO'
     dados_membro['DATA_CADASTRO'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    novo_membro_df = pd.DataFrame([dados_membro])
-    df_final = pd.concat([df_usuarios, novo_membro_df], ignore_index=True)
-    df_final.to_csv(filepath, index=False)
+    return insert_record('usuarios', dados_membro)
 
 # --- CARREGAMENTO DOS DADOS ---
-institucional = carregar_dados_institucionais()
-servicos = carregar_servicos()
+institucional = carregar_dados_db('institucional').iloc[0]
+servicos = carregar_dados_db('servicos')
 
 # --- LAYOUT DA PÁGINA ---
 st.title("📝 Solicitação de Benefícios")
@@ -90,11 +82,9 @@ if 'form_data' not in st.session_state:
 def next_step(): st.session_state.step += 1
 def prev_step(): st.session_state.step -= 1
 
-# --- ETAPA 1: SELEÇÃO DE SERVIÇO E PLANO ---
+# --- ETAPAS DO FORMULÁRIO ---
 def step1_selecao():
     st.header("Etapa 1: Escolha seu Serviço e Plano")
-
-    # Seleção de Serviço
     lista_servicos = [f"{row['TIPO_SERVICO']}" for index, row in servicos.iterrows()]
     servico_selecionado_str = st.selectbox("**Primeiro, selecione o serviço desejado:**", lista_servicos)
     
@@ -104,7 +94,6 @@ def step1_selecao():
 
     st.info(f"**Descrição:** {servico_selecionado['DESCRICAO_SERVICO']}")
 
-    # Opção de Adicionais
     if servico_selecionado['VALOR_ADICIONAL'] > 0:
         st.subheader("Dependentes/Adicionais")
         num_adicionais = st.number_input(f"Deseja incluir dependentes? (Custo adicional de R$ {servico_selecionado['VALOR_ADICIONAL']:.2f} por dependente)", min_value=0, step=1)
@@ -122,7 +111,6 @@ def step1_selecao():
     st.divider()
     st.subheader("Agora, escolha a forma de pagamento:")
 
-    # Seleção de Plano
     cols = st.columns(len(PLANOS))
     for i, (plano_key, plano_info) in enumerate(PLANOS.items()):
         with cols[i]:
@@ -148,9 +136,6 @@ def step1_selecao():
                     next_step()
                     st.rerun()
 
-# O resto do código (step2_dados, step3_contrato, etc.) permanece o mesmo, mas precisa ser ajustado para usar os novos dados.
-
-# --- ETAPA 2: DADOS CADASTRAIS ---
 def step2_dados():
     st.header(f"Etapa 2: Seus Dados (Plano {PLANOS[st.session_state.form_data['plano_selecionado']]['nome']})")
     
@@ -159,6 +144,7 @@ def step2_dados():
         nome = st.text_input("Nome Completo*", value=st.session_state.form_data.get('NOME', ''))
         cpf = st.text_input("CPF*", value=st.session_state.form_data.get('CPF', ''))
         email = st.text_input("Email*", value=st.session_state.form_data.get('EMAIL', ''))
+        telefone = st.text_input("Telefone", value=st.session_state.form_data.get('TELEFONE', ''))
 
         st.subheader("Endereço")
         cep = st.text_input("CEP*", value=st.session_state.form_data.get('CEP', ''))
@@ -186,7 +172,7 @@ def step2_dados():
                 st.error("❌ As senhas não coincidem. Por favor, verifique.")
             else:
                 st.session_state.form_data.update({
-                    "NOME": nome, "CPF": cpf, "EMAIL": email,
+                    "NOME": nome, "CPF": cpf, "EMAIL": email, "TELEFONE": telefone,
                     "CEP": cep, "LOGRADOURO": logradouro, "NUMERO": numero,
                     "COMPLEMENTO": complemento, "BAIRRO": bairro, "CIDADE": cidade,
                     "ESTADO": estado, "SENHA_HASH": hash_password(senha)
@@ -194,7 +180,6 @@ def step2_dados():
                 next_step()
                 st.rerun()
 
-# --- ETAPA 3: CONTRATO ---
 def step3_contrato():
     st.header("Etapa 3: Contrato de Adesão")
     st.info("Por favor, baixe o contrato, assine-o (digitalmente ou à mão e escaneie) e faça o upload abaixo.")
@@ -202,7 +187,6 @@ def step3_contrato():
     plano_key = st.session_state.form_data['plano_selecionado']
     servico_selecionado = st.session_state.form_data['servico_selecionado']
     
-    # Recalcular preços para garantir consistência
     precos = calcular_preco_plano(servico_selecionado, plano_key)
     num_adicionais = st.session_state.form_data.get('num_adicionais', 0)
     total_adicionais = num_adicionais * servico_selecionado['VALOR_ADICIONAL'] * PLANOS[plano_key]['meses']
@@ -217,7 +201,6 @@ def step3_contrato():
         'nomes_adicionais': st.session_state.form_data.get('nomes_adicionais', '')
     }
 
-    # Gerar PDF em memória
     pdf_bytes = gerar_contrato_adesao_pdf(st.session_state.form_data, servico_selecionado, dados_plano_contrato, institucional)
     
     st.download_button(
@@ -242,7 +225,6 @@ def step3_contrato():
         next_step()
         st.rerun()
 
-# --- ETAPA 4: FINALIZAÇÃO ---
 def step4_finalizar():
     st.header("Etapa 4: Revisão e Finalização")
     st.success("Tudo pronto! Verifique seus dados e envie sua solicitação.")
@@ -274,19 +256,19 @@ def step4_finalizar():
             dados_para_salvar['ADICIONAIS_NOMES'] = dados_para_salvar.get('nomes_adicionais', '')
             dados_para_salvar['CONTRATO_ASSINADO_URL'] = contrato_url
             
-            # Limpa dados temporários
+            # Limpa dados temporários que não devem ir para o banco
             del dados_para_salvar['plano_selecionado']
             del dados_para_salvar['servico_selecionado']
             del dados_para_salvar['contrato_assinado_file']
             del dados_para_salvar['num_adicionais']
             del dados_para_salvar['nomes_adicionais']
 
-            salvar_novo_membro(dados_para_salvar)
+            if salvar_novo_membro(dados_para_salvar):
+                st.session_state.step = 5
+                st.rerun()
+            else:
+                st.error("Ocorreu um erro ao salvar seus dados. Tente novamente.")
 
-        st.session_state.step = 5
-        st.rerun()
-
-# --- ETAPA 5: SUCESSO ---
 def step5_sucesso():
     st.balloons()
     st.header("✅ Solicitação enviada com sucesso!")
@@ -298,7 +280,6 @@ def step5_sucesso():
 if st.session_state.step == 1:
     step1_selecao()
 else:
-    # Garante que os dados do serviço estejam na sessão para as etapas seguintes
     if 'servico_selecionado' not in st.session_state.form_data:
         st.warning("Por favor, selecione um serviço para continuar.")
         st.session_state.step = 1

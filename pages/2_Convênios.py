@@ -1,68 +1,68 @@
+
 import streamlit as st
 import pandas as pd
-import os
 import numpy as np
+from social_utils import display_social_media_links
+from auth import get_db_connection, insert_record, update_record, get_max_id
 
+display_social_media_links()
 st.set_page_config(page_title="Nossos Convênios", layout="wide")
 
+# --- FUNÇÕES DE BANCO DE DADOS ---
 @st.cache_data
-def carregar_dados_convenios():
-    return pd.read_csv('data/convenios.csv')
-
-@st.cache_data
-def carregar_dados_parceiros():
-    filepath = 'data/parceiros.csv'
-    return pd.read_csv(filepath) if os.path.exists(filepath) else pd.DataFrame()
-
-@st.cache_data
-def carregar_dados_ratings():
-    """Carrega os dados de avaliações do CSV."""
-    filepath = 'data/convenio_ratings.csv'
-    if not os.path.exists(filepath) or os.path.getsize(filepath) == 0:
-        return pd.DataFrame(columns=['RATING_ID', 'CONVENIO_ID', 'USER_ID', 'RATING'])
-    return pd.read_csv(filepath)
+def carregar_dados_db(table_name):
+    """Carrega uma tabela inteira do banco de dados para um DataFrame."""
+    conn = get_db_connection()
+    try:
+        df = pd.read_sql_query(f"SELECT * FROM {table_name}", conn)
+        return df
+    except Exception as e:
+        st.error(f"Erro ao carregar dados da tabela {table_name}: {e}")
+        return pd.DataFrame()
+    finally:
+        conn.close()
 
 def salvar_rating(convenio_id, user_id, rating):
     """Salva ou atualiza a avaliação de um usuário para um convênio."""
-    filepath = 'data/convenio_ratings.csv'
-    df_ratings = carregar_dados_ratings().copy()
+    df_ratings = carregar_dados_db('convenio_ratings')
 
-    # Verifica se o usuário já avaliou este convênio
-    existing_rating_index = df_ratings[(df_ratings['USER_ID'] == user_id) & (df_ratings['CONVENIO_ID'] == convenio_id)].index
+    existing_rating = df_ratings[(df_ratings['USER_ID'] == user_id) & (df_ratings['CONVENIO_ID'] == convenio_id)]
 
-    if not existing_rating_index.empty:
-        # Atualiza a avaliação existente
-        df_ratings.loc[existing_rating_index, 'RATING'] = rating
+    if not existing_rating.empty:
+        rating_id = existing_rating.iloc[0]['RATING_ID']
+        update_record('convenio_ratings', {'RATING': rating}, {'RATING_ID': rating_id})
     else:
-        # Adiciona uma nova avaliação
-        new_id = (df_ratings['RATING_ID'].max() + 1) if not df_ratings.empty else 1
-        new_rating = pd.DataFrame([{'RATING_ID': new_id, 'CONVENIO_ID': convenio_id, 'USER_ID': user_id, 'RATING': rating}])
-        df_ratings = pd.concat([df_ratings, new_rating], ignore_index=True)
+        new_id = get_max_id('convenio_ratings', 'RATING_ID') + 1
+        new_rating = {
+            'RATING_ID': int(new_id),
+            'CONVENIO_ID': convenio_id,
+            'USER_ID': user_id,
+            'RATING': rating
+        }
+        insert_record('convenio_ratings', new_rating)
     
-    df_ratings.to_csv(filepath, index=False)
     st.cache_data.clear()
 
-df_convenios = carregar_dados_convenios()
+# --- CARREGAMENTO INICIAL DOS DADOS ---
+df_convenios = carregar_dados_db('convenios')
+df_parceiros = carregar_dados_db('parceiros')
+df_ratings = carregar_dados_db('convenio_ratings')
 
 st.title("Rede de Convênios")
 st.write("Explore os benefícios exclusivos para nossos associados.")
 
-# --- LÓGICA PARA EXIBIÇÃO ---
-# Usamos o st.session_state para "lembrar" qual convênio foi selecionado.
+# --- LÓGICA DE EXIBIÇÃO ---
 if 'convenio_selecionado' not in st.session_state:
     st.session_state.convenio_selecionado = None
 
-# Se um convênio foi selecionado, mostramos a página de detalhes
 if st.session_state.convenio_selecionado:
     convenio = st.session_state.convenio_selecionado
     
-    st.header(convenio['NOME_CONVENIO'])
-    
     if st.button("⬅️ Voltar para a lista"):
         st.session_state.convenio_selecionado = None
-        st.rerun() # Recarrega a página para mostrar a lista
+        st.rerun()
 
-    col1, col2 = st.columns([1, 2]) # Coluna da imagem menor que a do texto
+    col1, col2 = st.columns([1, 2])
 
     with col1:
         st.image(convenio['IMAGEM_URL'], use_container_width=True)
@@ -71,8 +71,6 @@ if st.session_state.convenio_selecionado:
         st.image(convenio['ICON_URL'], width=60)
         st.write(convenio['DESCRICAO'])
 
-        # --- SEÇÃO DE AVALIAÇÃO ---
-        df_ratings = carregar_dados_ratings()
         ratings_deste_convenio = df_ratings[df_ratings['CONVENIO_ID'] == convenio['CONVENIO_ID']]
         avg_rating = ratings_deste_convenio['RATING'].mean()
         rating_count = len(ratings_deste_convenio)
@@ -100,11 +98,8 @@ if st.session_state.convenio_selecionado:
         else:
             st.info("Faça login para avaliar este convênio.")
 
-
         st.divider()
         st.subheader("Parceiros Associados")
-
-        df_parceiros = carregar_dados_parceiros()
         parceiros_do_convenio = df_parceiros[df_parceiros['CONVENIO_ID'] == convenio['CONVENIO_ID']]
 
         if parceiros_do_convenio.empty:
@@ -117,19 +112,13 @@ if st.session_state.convenio_selecionado:
                     if pd.notna(parceiro['ENDERECO']): st.write(f"📍 {parceiro['ENDERECO']}")
                     if pd.notna(parceiro['TELEFONE']): st.write(f"📞 {parceiro['TELEFONE']}")
                     if pd.notna(parceiro['WEBSITE']): st.markdown(f"🌐 [{parceiro['WEBSITE']}]({parceiro['WEBSITE']})")
-
-# Se nenhum convênio foi selecionado, mostramos a lista
 else:
-    # --- BARRA DE BUSCA ---
     search_term = st.text_input("🔎 Buscar por nome ou tipo de serviço", placeholder="Ex: Saúde, Educação, Academia...")
-
     st.write("Clique em 'Ver Mais' para detalhes de cada convênio.")
     
     convenios_ativos = df_convenios[df_convenios['STATUS'] == 'ATIVO']
 
-    # --- FILTRAGEM DOS DADOS ---
     if search_term:
-        # Filtra por nome do convênio OU tipo de serviço. A busca é case-insensitive.
         convenios_filtrados = convenios_ativos[
             convenios_ativos['NOME_CONVENIO'].str.contains(search_term, case=False, na=False) |
             convenios_ativos['TIPO_SERVICO'].str.contains(search_term, case=False, na=False)
@@ -137,7 +126,6 @@ else:
     else:
         convenios_filtrados = convenios_ativos
 
-    # Criando colunas para um layout de grade
     num_colunas = 3
     cols = st.columns(num_colunas)
 

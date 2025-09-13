@@ -1,19 +1,24 @@
+
 import streamlit as st
 import pandas as pd
+from social_utils import display_social_media_links
+from auth import get_db_connection
 
+display_social_media_links()
 st.set_page_config(page_title="Benefícios", layout="wide")
 
-# Função para carregar os dados dos benefícios
 @st.cache_data
 def carregar_dados_beneficios():
-    # Usamos um try-except para o caso do arquivo ainda não existir
+    conn = get_db_connection()
     try:
-        return pd.read_csv('data/beneficios.csv')
-    except FileNotFoundError:
-        # Se o arquivo não for encontrado, retorna um DataFrame vazio para não quebrar a aplicação
-        return pd.DataFrame(columns=['TITULO', 'DESCRICAO_BENEFICIO', 'ICONE'])
+        df = pd.read_sql_query("SELECT * FROM beneficios", conn)
+        return df
+    except Exception as e:
+        st.error(f"Erro ao carregar benefícios: {e}")
+        return pd.DataFrame()
+    finally:
+        conn.close()
 
-# Carrega os dados
 df_beneficios = carregar_dados_beneficios()
 
 st.title("Vantagens de ser um Associado")
@@ -24,9 +29,7 @@ O nosso foco principal é garantir economia através de uma rede de convênios r
 
 st.divider()
 
-# Verifica se há benefícios para exibir
 if not df_beneficios.empty:
-    # Itera sobre cada benefício e o exibe
     for index, beneficio in df_beneficios.iterrows():
         st.header(f"{beneficio['ICONE']} {beneficio['TITULO']}")
         st.write(beneficio['DESCRICAO_BENEFICIO'])
@@ -34,7 +37,6 @@ if not df_beneficios.empty:
 else:
     st.warning("Ainda não há benefícios cadastrados. Volte em breve!")
 
-# --- Call to Action (CTA) ---
 st.header("Pronto para Economizar?")
 st.write("Nossos convênios são a porta de entrada para um mundo de descontos. Veja a lista completa de parceiros e comece a aproveitar agora mesmo.")
 

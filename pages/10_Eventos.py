@@ -1,18 +1,25 @@
+
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+from social_utils import display_social_media_links
+from auth import get_db_connection
 
+display_social_media_links()
 st.set_page_config(page_title="Eventos", layout="wide")
 
 @st.cache_data
 def carregar_dados_eventos():
+    conn = get_db_connection()
     try:
-        df = pd.read_csv('data/eventos.csv')
-        # Convertendo a coluna de data para o formato datetime para comparação
+        df = pd.read_sql_query("SELECT * FROM eventos", conn)
         df['DATA_EVENTO'] = pd.to_datetime(df['DATA_EVENTO'])
         return df
-    except FileNotFoundError:
+    except Exception as e:
+        st.error(f"Erro ao carregar eventos: {e}")
         return pd.DataFrame()
+    finally:
+        conn.close()
 
 st.title("📅 Calendário de Eventos")
 st.write("Fique por dentro de todas as nossas atividades, workshops e confraternizações.")

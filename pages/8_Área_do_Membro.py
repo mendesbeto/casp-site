@@ -1,67 +1,80 @@
+
 import streamlit as st
 import pandas as pd
-import os
+import sqlite3
 from datetime import datetime
-from auth import verify_password
+from auth import verify_password, get_user_by_email, get_db_connection
 from pdf_utils import gerar_recibo_pdf
+from social_utils import display_social_media_links
+
+display_social_media_links()
 
 st.set_page_config(page_title="Área do Membro", layout="centered")
 
-# --- FUNÇÕES ---
-def carregar_usuarios():
-    """Carrega o arquivo de usuários."""
-    filepath = 'data/usuarios.csv'
-    if not os.path.exists(filepath):
-        return pd.DataFrame()
-    return pd.read_csv(filepath)
-
+# --- FUNÇÕES DE BANCO DE DADOS ---
 @st.cache_data
 def carregar_dados_noticias():
-    filepath = 'data/noticias.csv'
-    if not os.path.exists(filepath):
-        return pd.DataFrame()
-    df = pd.read_csv(filepath)
+    conn = get_db_connection()
+    df = pd.read_sql_query("SELECT * FROM noticias", conn)
+    conn.close()
     df['DATA'] = pd.to_datetime(df['DATA'])
     return df
 
 @st.cache_data
 def carregar_tag_follows():
-    """Carrega os dados de tags seguidas."""
-    filepath = 'data/tag_follows.csv'
-    return pd.read_csv(filepath) if os.path.exists(filepath) else pd.DataFrame()
+    conn = get_db_connection()
+    df = pd.read_sql_query("SELECT * FROM tag_follows", conn)
+    conn.close()
+    return df
 
 @st.cache_data
 def carregar_dados_institucionais():
-    return pd.read_csv('data/institucional.csv').iloc[0]
+    conn = get_db_connection()
+    # Carrega a primeira linha da tabela institucional
+    dados = pd.read_sql_query("SELECT * FROM institucional LIMIT 1", conn).iloc[0]
+    conn.close()
+    return dados
 
 def carregar_historico_financeiro(user_id):
-    """Carrega o histórico financeiro de um usuário específico."""
-    filepath = 'data/financas.csv'
-    if not os.path.exists(filepath) or os.path.getsize(filepath) == 0:
-        # Se o arquivo não existir, cria com os cabeçalhos corretos
-        cols = ['COBRANCA_ID','USER_ID','SERVICO_CONTRATADO','VALOR','DATA_EMISSAO','DATA_VENCIMENTO','DATA_PAGAMENTO','DOCUMENTO_URL','VALOR_PAGO','STATUS','OBSERVACOES']
-        pd.DataFrame(columns=cols).to_csv(filepath, index=False)
-        return pd.DataFrame()
-    
-    df_financas = pd.read_csv(filepath)
-    return df_financas[df_financas['USER_ID'] == user_id]
+    conn = get_db_connection()
+    query = "SELECT * FROM financas WHERE USER_ID = ?"
+    df_financas = pd.read_sql_query(query, conn, params=(user_id,))
+    conn.close()
+    return df_financas
 
 def atualizar_dados_membro(user_id, novos_dados):
-    """Atualiza os dados de um membro no arquivo CSV."""
-    filepath = 'data/usuarios.csv'
-    df_usuarios = carregar_usuarios()
-    
-    user_index = df_usuarios[df_usuarios['ID'] == user_id].index
-    
-    if not user_index.empty:
-        for key, value in novos_dados.items():
-            df_usuarios.loc[user_index, key] = value
+    """Atualiza os dados de um membro no banco de dados."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        # Constrói a query de atualização dinamicamente
+        set_clause = ", ".join([f"{key} = ?" for key in novos_dados.keys()])
+        params = list(novos_dados.values()) + [user_id]
+        query = f"UPDATE usuarios SET {set_clause} WHERE ID = ?"
         
-        df_usuarios.to_csv(filepath, index=False)
+        cursor.execute(query, params)
+        conn.commit()
         return True
-    return False
+    except sqlite3.Error as e:
+        st.error(f"Erro de banco de dados: {e}")
+        return False
+    finally:
+        conn.close()
 
+def atualizar_ultimo_acesso(user_id):
+    """Atualiza o campo ULTIMO_ACESSO para o usuário no banco de dados."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        cursor.execute("UPDATE usuarios SET ULTIMO_ACESSO = ? WHERE ID = ?", (now_str, user_id))
+        conn.commit()
+    except sqlite3.Error as e:
+        print(f"Erro ao atualizar último acesso: {e}") # Log para debug
+    finally:
+        conn.close()
 
+# --- PÁGINAS E LÓGICA DE UI ---
 def pagina_login():
     """Exibe o formulário de login para membros."""
     st.header("Login do Associado")
@@ -72,27 +85,16 @@ def pagina_login():
         submitted = st.form_submit_button("Entrar")
  
         if submitted:
-            df_usuarios = carregar_usuarios()
-            if df_usuarios.empty:
-                st.error("Nenhum usuário cadastrado.")
-                return
- 
-            # Garante que a coluna de email seja do tipo string para evitar erros
-            df_usuarios['EMAIL'] = df_usuarios['EMAIL'].astype(str)
-            # Procura o usuário pelo email
-            user_data = df_usuarios[df_usuarios['EMAIL'].str.lower() == email.lower()]
- 
-            if not user_data.empty:
-                user = user_data.iloc[0]
+            user = get_user_by_email(email)
+
+            if user:
                 # Verifica se a conta está ativa e se a senha está correta
                 if user['STATUS'] == 'ATIVO' and verify_password(senha, user['SENHA_HASH']):
-                    # --- LÓGICA DE ÚLTIMO ACESSO ---
-                    last_login_str = user.get('ULTIMO_ACESSO')
-                    df_usuarios.loc[df_usuarios['ID'] == user['ID'], 'ULTIMO_ACESSO'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    df_usuarios.to_csv('data/usuarios.csv', index=False)
+                    last_login_str = user['ULTIMO_ACESSO']
+                    atualizar_ultimo_acesso(user['ID'])
 
                     st.session_state['member_logged_in'] = True
-                    st.session_state['member_info'] = user.to_dict()
+                    st.session_state['member_info'] = dict(user) # Converte sqlite3.Row para dict
                     st.session_state['last_login_for_notifications'] = last_login_str
                     st.rerun()
                 else:
@@ -104,7 +106,6 @@ def pagina_login():
 
 def pagina_perfil():
     """Exibe o perfil do membro logado."""
-    # Inicializa o modo de edição se não existir no estado da sessão
     if 'edit_mode' not in st.session_state:
         st.session_state.edit_mode = False
 
@@ -138,21 +139,21 @@ def pagina_perfil():
                 st.divider()
 
     if st.button("Sair"):
-        # Limpa todas as chaves de sessão relacionadas ao membro para um logout completo
         for key in ['member_logged_in', 'member_info', 'edit_mode', 'last_login_for_notifications']:
             if key in st.session_state:
                 del st.session_state[key]
         st.rerun()
 
-    # Se NÃO estiver em modo de edição, mostra os dados e o botão para editar
     tab_perfil, tab_financeiro = st.tabs(["👤 Meu Perfil", "💰 Financeiro"])
 
     with tab_perfil:
         if not st.session_state.edit_mode:
             st.subheader("Seus Dados")
-            st.write(f"**Nome Completo:** {user_info['NOME']}")
-            st.write(f"**Email:** {user_info['EMAIL']}")
-            st.write(f"**CPF:** {user_info['CPF']}")
+            # Exibe os dados do dicionário user_info
+            st.write(f"**Nome Completo:** {user_info.get('NOME', 'Não informado')}")
+            st.write(f"**Email:** {user_info.get('EMAIL', 'Não informado')}")
+            st.write(f"**CPF:** {user_info.get('CPF', 'Não informado')}")
+            st.write(f"**Telefone:** {user_info.get('TELEFONE', 'Não informado')}")
             st.write(f"**Endereço:** {user_info.get('LOGRADOURO', '')}, {user_info.get('NUMERO', '')} - {user_info.get('BAIRRO', '')}")
             st.write(f"**Cidade/Estado:** {user_info.get('CIDADE', '')} - {user_info.get('ESTADO', '')}")
             
@@ -164,7 +165,8 @@ def pagina_perfil():
             with st.form("form_edit_profile"):
                 st.info("Altere os campos que desejar e clique em salvar. Email e CPF não podem ser alterados.")
                 
-                nome = st.text_input("Nome Completo", value=user_info['NOME'])
+                nome = st.text_input("Nome Completo", value=user_info.get('NOME', ''))
+                telefone = st.text_input("Telefone", value=user_info.get('TELEFONE', ''))
                 cep = st.text_input("CEP", value=user_info.get('CEP', ''))
                 logradouro = st.text_input("Logradouro (Rua, Av.)", value=user_info.get('LOGRADOURO', ''))
                 numero = st.text_input("Número", value=user_info.get('NUMERO', ''))
@@ -178,7 +180,7 @@ def pagina_perfil():
 
                 if save_button:
                     novos_dados = {
-                        "NOME": nome, "CEP": cep, "LOGRADOURO": logradouro, "NUMERO": numero,
+                        "NOME": nome, "TELEFONE": telefone, "CEP": cep, "LOGRADOURO": logradouro, "NUMERO": numero,
                         "COMPLEMENTO": complemento, "BAIRRO": bairro, "CIDADE": cidade, "ESTADO": estado,
                     }
                     if atualizar_dados_membro(user_info['ID'], novos_dados):
@@ -227,7 +229,6 @@ def pagina_perfil():
                             key=f"dl_{row['COBRANCA_ID']}",
                             use_container_width=True
                         )
-
 
 # --- CONTROLE PRINCIPAL DA PÁGINA ---
 if 'member_logged_in' not in st.session_state:
