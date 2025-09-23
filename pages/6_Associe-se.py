@@ -17,13 +17,13 @@ def carregar_dados_db(table_name):
     """Carrega uma tabela inteira do banco de dados para um DataFrame."""
     conn = get_db_connection()
     try:
-        df = pd.read_sql_query(f"SELECT * FROM {table_name}", conn)
+        df = pd.read_sql_query(f'SELECT * FROM "{table_name}"', conn)
         return df
     except Exception as e:
         st.error(f"Erro ao carregar dados da tabela {table_name}: {e}")
         return pd.DataFrame()
     finally:
-        conn.close()
+        if conn: conn.close()
 
 # --- FUNÇÕES DE CÁLCULO ---
 def calcular_preco_plano(servico, plano_key):
@@ -56,14 +56,23 @@ PLANOS = {
 # --- FUNÇÕES DE MANIPULAÇÃO DE DADOS ---
 def salvar_novo_membro(dados_membro):
     """Salva os dados do novo membro no banco de dados."""
-    new_id = get_max_id('usuarios', 'ID') + 1
+    max_id = get_max_id('usuarios', '"ID"')
+    new_id = int(max_id) + 1 if max_id else 1
     
-    dados_membro['ID'] = new_id
+    dados_membro['ID'] = str(new_id)
     dados_membro['STATUS'] = 'PENDENTE'
     dados_membro['NIVEL_ACESSO'] = 'MEMBRO'
     dados_membro['DATA_CADASTRO'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    return insert_record('usuarios', dados_membro)
+    colunas_usuarios = ['ID', 'NOME', 'CPF', 'EMAIL', 'CEP', 'LOGRADOURO', 'NUMERO', 
+                        'COMPLEMENTO', 'BAIRRO', 'CIDADE', 'ESTADO', 'SENHA_HASH', 
+                        'STATUS', 'DATA_CADASTRO', 'NIVEL_ACESSO', 'TOKEN_RECUPERACAO', 
+                        'DATA_EXPIRACAO_TOKEN', 'ULTIMO_ACESSO', 'PLANO_ESCOLHIDO', 
+                        'CONTRATO_ASSINADO_URL', 'SERVICO_ESCOLHIDO', 'ADICIONAIS_NOMES', 'TELEFONE']
+    
+    dados_para_inserir = {f'"{k}"': v for k, v in dados_membro.items() if k in colunas_usuarios}
+
+    return insert_record('usuarios', dados_para_inserir)
 
 # --- CARREGAMENTO DOS DADOS ---
 institucional = carregar_dados_db('institucional').iloc[0]
@@ -99,6 +108,7 @@ def step1_selecao():
         num_adicionais = st.number_input(f"Deseja incluir dependentes? (Custo adicional de R$ {servico_selecionado['VALOR_ADICIONAL']:.2f} por dependente)", min_value=0, step=1)
         st.session_state.form_data['num_adicionais'] = num_adicionais
         
+        st.session_state.form_data['nomes_adicionais'] = ""
         nomes_adicionais = []
         if num_adicionais > 0:
             for i in range(num_adicionais):
@@ -232,7 +242,7 @@ def step4_finalizar():
     servico_info = st.session_state.form_data['servico_selecionado']
     plano_info = PLANOS[st.session_state.form_data['plano_selecionado']]
 
-    st.write(f"**Serviço Escolhido:** {servico_info['TIPO_SERVICO']} - {servico_info['DESCRICAO_SERVICO']}")
+    st.write(f"**Serviço Escolhido:** {servico_info['TIPO_SERVICO']} ")
     st.write(f"**Plano de Pagamento:** {plano_info['nome']}")
     if st.session_state.form_data.get('num_adicionais', 0) > 0:
         st.write(f"**Dependentes:** {st.session_state.form_data['num_adicionais']}")

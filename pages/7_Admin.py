@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
-import sqlite3
-from auth import verify_password, get_user_by_email, get_db_connection
+from auth import verify_password, get_user_by_email, get_db_connection, insert_record, update_record, delete_record, get_max_id
 from file_utils import save_uploaded_file
 from streamlit_quill import st_quill
 import matplotlib.pyplot as plt
@@ -18,79 +17,17 @@ def carregar_dados_db(table_name):
     """Carrega uma tabela inteira do banco de dados para um DataFrame."""
     conn = get_db_connection()
     try:
-        df = pd.read_sql_query(f"SELECT * FROM {table_name}", conn)
+        df = pd.read_sql_query(f'SELECT * FROM "{table_name}"', conn)
         return df
     except Exception as e:
         st.error(f"Erro ao carregar dados da tabela {table_name}: {e}")
         return pd.DataFrame()
     finally:
-        conn.close()
+        if conn: conn.close()
 
 def update_user_status(user_id, status):
     """Atualiza o status de um usuário no banco de dados."""
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor()
-        cursor.execute("UPDATE usuarios SET STATUS = ? WHERE ID = ?", (status, user_id))
-        conn.commit()
-        return True
-    except sqlite3.Error as e:
-        st.error(f"Erro ao atualizar status do usuário: {e}")
-        return False
-    finally:
-        conn.close()
-
-def insert_record(table_name, record_dict):
-    """Insere um novo registro em uma tabela."""
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor()
-        columns = ', '.join(record_dict.keys())
-        placeholders = ', '.join(['?'] * len(record_dict))
-        query = f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders})"
-        cursor.execute(query, list(record_dict.values()))
-        conn.commit()
-        return True
-    except sqlite3.Error as e:
-        st.error(f"Erro ao inserir registro: {e}")
-        return False
-    finally:
-        conn.close()
-
-def update_record(table_name, record_dict, where_clause):
-    """Atualiza um registro em uma tabela."""
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor()
-        set_clause = ", ".join([f"{key} = ?" for key in record_dict.keys()])
-        params = list(record_dict.values()) + list(where_clause.values())
-        where_keys = " AND ".join([f"{key} = ?" for key in where_clause.keys()])
-        query = f"UPDATE {table_name} SET {set_clause} WHERE {where_keys}"
-        cursor.execute(query, params)
-        conn.commit()
-        return True
-    except sqlite3.Error as e:
-        st.error(f"Erro ao atualizar registro: {e}")
-        return False
-    finally:
-        conn.close()
-
-def delete_record(table_name, where_clause):
-    """Deleta um registro de uma tabela."""
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor()
-        where_keys = " AND ".join([f"{key} = ?" for key in where_clause.keys()])
-        params = list(where_clause.values())
-        query = f"DELETE FROM {table_name} WHERE {where_keys}"
-        cursor.execute(query, params)
-        conn.commit()
-        return True
-    except sqlite3.Error as e:
-        st.error(f"Erro ao deletar registro: {e}")
-        return False
-    finally:
-        conn.close()
+    update_record('usuarios', {'"STATUS"': status}, {'"ID"': user_id})
 
 # --- PÁGINA DE LOGIN DO ADMIN ---
 def pagina_login_admin():
@@ -103,15 +40,18 @@ def pagina_login_admin():
         if submitted:
             user = get_user_by_email(email)
             
-            if user and user['NIVEL_ACESSO'] == 'ADMIN':
-                if verify_password(senha, user['SENHA_HASH']):
-                    st.session_state['admin_logged_in'] = True
-                    st.session_state['admin_info'] = dict(user)
-                    st.rerun()
+            if user:
+                if user.get('NIVEL_ACESSO') == 'ADMIN':
+                    if verify_password(senha, user.get('SENHA_HASH')):
+                        st.session_state['admin_logged_in'] = True
+                        st.session_state['admin_info'] = user
+                        st.rerun()
+                    else:
+                        st.error("Senha incorreta.")
                 else:
-                    st.error("Email ou senha incorretos.")
+                    st.error(f"O usuário com email {email} não é um administrador.")
             else:
-                st.error("Acesso negado. Verifique as credenciais.")
+                st.error(f"Nenhum usuário encontrado com o email {email}.")
 
 # --- PÁGINA PRINCIPAL DO ADMIN ---
 def pagina_admin():
@@ -123,766 +63,639 @@ def pagina_admin():
         del st.session_state['admin_info']
         st.rerun()
 
-    tab_usuarios, tab_institucional, tab_convenios, tab_noticias, tab_eventos, tab_financas, tab_parceiros, tab_servicos, tab_beneficios, tab_comentarios, tab_contatos, tab_log_login = st.tabs([
-        "👥 Usuários", "📰 Institucional", "🏥 Convênios", "📰 Notícias", "🎉 Eventos", "💰 Financeiro", "🤝 Parceiros", "🛠️ Serviços", "✨ Benefícios", "💬 Comentários", "📧 Contatos", "📜 Log de Atividades"
+    tabs = st.tabs([
+        "👥 Usuários", "📰 Institucional", "🏥 Convênios", "📰 Notícias", "🎉 Eventos", 
+        "💰 Financeiro", "🤝 Parceiros", "🛠️ Serviços", "✨ Benefícios", 
+        "💬 Comentários", "📧 Contatos", "📜 Log de Atividades"
     ])
-
-    with tab_usuarios:
+    
+    with tabs[0]:
         gerenciar_usuarios()
-    with tab_institucional:
+    with tabs[1]:
         gerenciar_institucional()
-    with tab_convenios:
+    with tabs[2]:
         gerenciar_convenios()
-    with tab_noticias:
+    with tabs[3]:
         gerenciar_noticias()
-    with tab_eventos:
+    with tabs[4]:
         gerenciar_eventos()
-    with tab_financas:
+    with tabs[5]:
         gerenciar_financas()
-    with tab_parceiros:
+    with tabs[6]:
         gerenciar_parceiros()
-    with tab_servicos:
+    with tabs[7]:
         gerenciar_servicos()
-    with tab_beneficios:
+    with tabs[8]:
         gerenciar_beneficios()
-    with tab_comentarios:
+    with tabs[9]:
         gerenciar_comentarios()
-    with tab_contatos:
+    with tabs[10]:
         gerenciar_contatos()
-    with tab_log_login:
+    with tabs[11]:
         gerenciar_log_atividades()
 
-# --- GERENCIAMENTO DE USUÁRIOS ---
 def gerenciar_usuarios():
-    st.subheader("Visão Geral dos Usuários")
-    df_usuarios = carregar_dados_db('usuarios')
+    st.subheader("Gerenciamento de Usuários")
+    df_users = carregar_dados_db('usuarios')
 
-    if df_usuarios.empty:
-        st.info("Nenhum usuário para exibir.")
-        return
+    if df_users.empty:
+        st.info("Nenhum usuário cadastrado.")
 
-    # Estilos CSS para os cartões de métricas
-    st.markdown("""
-    <style>
-    .metric-card {
-        background-color: #FFFFFF;
-        border: 1px solid #E0E0E0;
-        border-radius: 10px;
-        padding: 20px;
-        margin: 10px 0;
-        text-align: center;
-        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-        transition: box-shadow 0.3s ease-in-out;
-    }
-    .metric-card:hover {
-        box-shadow: 0 8px 16px rgba(0,0,0,0.2);
-    }
-    .metric-card h3 {
-        margin: 0 0 10px 0;
-        font-size: 1.1rem;
-        color: #4F4F4F;
-        font-weight: bold;
-    }
-    .metric-card p {
-        margin: 0;
-        font-size: 2.5rem;
-        font-weight: 600;
-    }
-    .status-ativo p { color: #28a745; }
-    .status-inativo p { color: #dc3545; }
-    .status-pendente p { color: #ffc107; }
-    .nivel-admin p { color: #007bff; }
-    .nivel-membro p { color: #6c757d; }
-    </style>
-    """, unsafe_allow_html=True)
+    st.dataframe(df_users)
 
-    # Contagens
-    status_counts = df_usuarios['STATUS'].value_counts()
-    nivel_counts = df_usuarios['NIVEL_ACESSO'].value_counts()
-    total_users = len(df_usuarios)
+    if not df_users.empty:
+        st.subheader("Aprovar/Bloquear Usuários")
+        user_id_to_update = st.selectbox("Selecione o ID do usuário", df_users['ID'])
+        new_status = st.selectbox("Selecione o novo status", ["ATIVO", "INATIVO", "PENDENTE", "BLOQUEADO"])
+        if st.button("Atualizar Status"):
+            update_user_status(user_id_to_update, new_status)
+            st.success(f"Status do usuário {user_id_to_update} atualizado para {new_status}.")
+            st.rerun()
 
-    # Card para total de usuários
-    st.markdown(f"""
-    <div class="metric-card">
-        <h3>Total de Usuários</h3>
-        <p>{total_users}</p>
-    </div>
-    """, unsafe_allow_html=True)
+    st.subheader("Adicionar Novo Usuário")
+    with st.form("add_user_form", clear_on_submit=True):
+        new_user_nome = st.text_input("Nome")
+        new_user_email = st.text_input("Email")
+        new_user_senha = st.text_input("Senha", type="password")
+        new_user_nivel = st.selectbox("Nível de Acesso", ["MEMBRO", "ADMIN"])
+        add_user_submitted = st.form_submit_button("Adicionar Usuário")
 
-    # Cards para Status
-    st.markdown("### Usuários por Status")
-    status_map = {'ATIVO': 'ativo', 'INATIVO': 'inativo', 'PENDENTE': 'pendente'}
-    
-    # Garante que todos os status principais sejam exibidos, mesmo que a contagem seja 0
-    for status in ['ATIVO', 'INATIVO', 'PENDENTE']:
-        if status not in status_counts:
-            status_counts[status] = 0
+        if add_user_submitted:
+            from auth import hash_password
+            hashed_password = hash_password(new_user_senha)
             
-    cols_status = st.columns(len(status_counts))
-    
-    for i, (status, count) in enumerate(status_counts.items()):
-        with cols_status[i]:
-            st.markdown(f"""
-            <div class="metric-card status-{status_map.get(status, '')}">
-                <h3>{status.capitalize()}</h3>
-                <p>{count}</p>
-            </div>
-            """, unsafe_allow_html=True)
+            max_id = get_max_id('usuarios', '"ID"')
+            new_id = int(max_id) + 1 if max_id else 1
 
-    # Cards para Nível de Acesso
-    st.markdown("### Usuários por Nível de Acesso")
-    nivel_map = {'ADMIN': 'admin', 'MEMBRO': 'membro'}
+            new_user_data = {
+                '"ID"': str(new_id),
+                '"NOME"': new_user_nome,
+                '"EMAIL"': new_user_email,
+                '"SENHA_HASH"': hashed_password,
+                '"NIVEL_ACESSO"': new_user_nivel,
+                '"STATUS"': 'ATIVO'
+            }
+            insert_record('usuarios', new_user_data)
+            st.success("Novo usuário adicionado com sucesso.")
+            st.rerun()
 
-    # Garante que todos os níveis de acesso principais sejam exibidos
-    for nivel in ['ADMIN', 'MEMBRO']:
-        if nivel not in nivel_counts:
-            nivel_counts[nivel] = 0
-            
-    cols_nivel = st.columns(len(nivel_counts))
+    if not df_users.empty:
+        st.subheader("Editar Usuário")
+        user_id_to_edit = st.selectbox("Selecione o ID do usuário para editar", df_users['ID'], key="edit_user_select")
+        user_to_edit = df_users[df_users['ID'] == user_id_to_edit].iloc[0]
 
-    for i, (nivel, count) in enumerate(nivel_counts.items()):
-        with cols_nivel[i]:
-            st.markdown(f"""
-            <div class="metric-card nivel-{nivel_map.get(nivel, '')}">
-                <h3>{nivel.capitalize()}</h3>
-                <p>{count}</p>
-            </div>
-            """, unsafe_allow_html=True)
+        with st.form("edit_user_form"):
+            edit_user_nome = st.text_input("Nome", value=user_to_edit['NOME'])
+            edit_user_email = st.text_input("Email", value=user_to_edit['EMAIL'])
+            edit_user_nivel = st.selectbox("Nível de Acesso", ["MEMBRO", "ADMIN"], index=["MEMBRO", "ADMIN"].index(user_to_edit['NIVEL_ACESSO']))
+            edit_user_submitted = st.form_submit_button("Salvar Alterações")
 
+            if edit_user_submitted:
+                updated_user_data = {
+                    '"NOME"': edit_user_nome,
+                    '"EMAIL"': edit_user_email,
+                    '"NIVEL_ACESSO"': edit_user_nivel
+                }
+                update_record('usuarios', updated_user_data, {'"ID"': user_id_to_edit})
+                st.success(f"Usuário {user_id_to_edit} atualizado com sucesso.")
+                st.rerun()
 
-    st.subheader("Novos Cadastros ao Longo do Tempo")
-    # Certifica-se de que a coluna de data está no formato datetime
-    df_usuarios['DATA_CADASTRO'] = pd.to_datetime(df_usuarios['DATA_CADASTRO'], errors='coerce')
-    cadastros_por_dia = df_usuarios.dropna(subset=['DATA_CADASTRO']).set_index('DATA_CADASTRO').resample('D').size()
-    st.line_chart(cadastros_por_dia)
-
-    st.divider()
-
-    # Botão para exportar dados
-    st.subheader("Exportar Relatório de Usuários")
-    csv = df_usuarios.to_csv(index=False).encode('utf-8')
-    st.download_button(
-        label="Exportar Relatório de Usuários (CSV)",
-        data=csv,
-        file_name='relatorio_usuarios.csv',
-        mime='text/csv',
-    )
-
-    st.divider()
-
-    # Seção de Aprovações Pendentes
-    st.subheader("Aprovações Pendentes")
-    df_pendentes = df_usuarios[df_usuarios['STATUS'] == 'PENDENTE']
-
-    if df_pendentes.empty:
-        st.info("Nenhuma solicitação pendente.")
-    else:
-        for index, row in df_pendentes.iterrows():
-            with st.expander(f"{row['NOME']} ({row['EMAIL']})"):
-                st.write(f"**Plano:** {row.get('PLANO_ESCOLHIDO', 'N/A')}")
-                st.write(f"**Serviço:** {row.get('SERVICO_ESCOLHIDO', 'N/A')}")
-                st.write(f"**Dependentes:** {row.get('ADICIONAIS_NOMES', 'Nenhum')}")
-                if st.button("Aprovar Usuário", key=f"approve_{row['ID']}"):
-                    if update_user_status(row['ID'], 'ATIVO'):
-                        st.success(f"Usuário {row['NOME']} aprovado!")
-                        st.rerun()
+        st.subheader("Excluir Usuário")
+        user_id_to_delete = st.selectbox("Selecione o ID do usuário para excluir", df_users['ID'], key="delete_user_select")
+        if st.button("Excluir Usuário", type="primary"):
+            delete_record('usuarios', {'"ID"': user_id_to_delete})
+            st.success(f"Usuário {user_id_to_delete} excluído com sucesso.")
+            st.rerun()
 
 def gerenciar_institucional():
-    st.subheader("Gerenciar Informações Institucionais")
+    st.subheader("Gerenciamento Institucional")
     
     df_institucional = carregar_dados_db('institucional')
     
     if df_institucional.empty:
-        st.warning("Tabela 'institucional' está vazia. Inserindo dados padrão.")
-        conn = get_db_connection()
-        try:
-            default_data = {
-                'TITULO_SITE': 'Nome da Associação', 'LOGO_URL': '', 'HISTORICO': '',
-                'MISSAO': '', 'VISAO': '', 'VALORES': '', 'EMAIL_CONTATO': '',
-                'TELEFONE_CONTATO': '', 'ENDERECO': ''
+        st.warning("Nenhuma informação institucional encontrada. Por favor, adicione as informações.")
+        with st.form("add_institucional_form"):
+            institucional_data = {
+                '"TITULO_SITE"': st.text_input("Título do Site"),
+                '"LOGO_URL"': st.text_input("URL do Logo"),
+                '"CNPJ_CPF"': st.text_input("CNPJ/CPF"),
+                '"DATA_FUNDACAO"': st.text_input("Data de Fundação"),
+                '"HISTORICO"': st_quill(placeholder="Histórico..."),
+                '"MISSAO"': st_quill(placeholder="Missão..."),
+                '"VISAO"': st_quill(placeholder="Visão..."),
+                '"VALORES"': st_quill(placeholder="Valores..."),
+                '"EMAIL_CONTATO"': st.text_input("Email de Contato"),
+                '"TELEFONE_CONTATO"': st.text_input("Telefone de Contato"),
+                '"ENDERECO"': st.text_input("Endereço"),
             }
-            pd.DataFrame([default_data]).to_sql('institucional', conn, if_exists='append', index=False)
-            st.rerun()
-        finally:
-            conn.close()
+            submitted = st.form_submit_button("Salvar Informações")
+            if submitted:
+                insert_record('institucional', institucional_data)
+                st.success("Informações institucionais salvas com sucesso!")
+                st.rerun()
         return
 
-    institucional_data = df_institucional.iloc[0].to_dict()
+    item = df_institucional.iloc[0]
+    
+    with st.form("edit_institucional_form"):
+        st.write("Edite as informações institucionais do site.")
+        
+        updated_data = {
+            '"TITULO_SITE"': st.text_input("Título do Site", value=item.get('TITULO_SITE', '')),
+            '"LOGO_URL"': st.text_input("URL do Logo", value=item.get('LOGO_URL', '')),
+            '"CNPJ_CPF"': st.text_input("CNPJ/CPF", value=item.get('CNPJ_CPF', '')),
+            '"DATA_FUNDACAO"': st.text_input("Data de Fundação", value=item.get('DATA_FUNDACAO', '')),
+            '"HISTORICO"': st_quill(value=item.get('HISTORICO', ''), placeholder="Histórico..."),
+            '"MISSAO"': st_quill(value=item.get('MISSAO', ''), placeholder="Missão..."),
+            '"VISAO"': st_quill(value=item.get('VISAO', ''), placeholder="Visão..."),
+            '"VALORES"': st_quill(value=item.get('VALORES', ''), placeholder="Valores..."),
+            '"EMAIL_CONTATO"': st.text_input("Email de Contato", value=item.get('EMAIL_CONTATO', '')),
+            '"TELEFONE_CONTATO"': st.text_input("Telefone de Contato", value=item.get('TELEFONE_CONTATO', '')),
+            '"ENDERECO"': st.text_input("Endereço", value=item.get('ENDERECO', '')),
+        }
 
-    with st.form("form_institucional"):
-        st.write("Edite as informações que aparecem em várias partes do site.")
+        submitted = st.form_submit_button("Atualizar Informações")
         
-        novos_dados = {}
-        novos_dados['TITULO_SITE'] = st.text_input("Título do Site", value=institucional_data.get('TITULO_SITE', ''))
-        novos_dados['LOGO_URL'] = st.text_input("URL da Logo Principal", value=institucional_data.get('LOGO_URL', ''))
-        
-        st.subheader("Página 'Sobre Nós'")
-        novos_dados['HISTORICO'] = st.text_area("Nossa História", value=institucional_data.get('HISTORICO', ''), height=200)
-        novos_dados['MISSAO'] = st.text_area("Missão", value=institucional_data.get('MISSAO', ''), height=100)
-        novos_dados['VISAO'] = st.text_area("Visão", value=institucional_data.get('VISAO', ''), height=100)
-        novos_dados['VALORES'] = st.text_area("Valores", value=institucional_data.get('VALORES', ''), height=100)
-        
-        st.subheader("Informações de Contato")
-        novos_dados['EMAIL_CONTATO'] = st.text_input("Email de Contato", value=institucional_data.get('EMAIL_CONTATO', ''))
-        novos_dados['TELEFONE_CONTATO'] = st.text_input("Telefone de Contato", value=institucional_data.get('TELEFONE_CONTATO', ''))
-        novos_dados['ENDERECO'] = st.text_input("Endereço Físico", value=institucional_data.get('ENDERECO', ''))
-
-        if st.form_submit_button("Salvar Alterações Institucionais", type="primary"):
-            conn = get_db_connection()
-            try:
-                cursor = conn.cursor()
-                set_clause = ", ".join([f"{key} = ?" for key in novos_dados.keys()])
-                params = list(novos_dados.values())
-                cursor.execute(f"UPDATE institucional SET {set_clause} WHERE rowid = 1", params)
-                conn.commit()
-                st.success("Informações institucionais atualizadas com sucesso!")
-                st.cache_data.clear()
-                st.rerun()
-            except sqlite3.Error as e:
-                st.error(f"Erro ao salvar no banco de dados: {e}")
-            finally:
-                conn.close()
+        if submitted:
+            update_record('institucional', updated_data, {'"ID"': item['ID']})
+            st.success("Informações institucionais atualizadas com sucesso!")
+            st.rerun()
 
 def gerenciar_convenios():
-    st.subheader("Gerenciar Convênios")
-    
+    st.subheader("Gerenciamento de Convênios")
     df_convenios = carregar_dados_db('convenios')
 
-    st.write("Adicionar, editar ou remover convênios da plataforma.")
+    st.dataframe(df_convenios)
 
-    # Formulário para adicionar novo convênio
-    with st.expander("➕ Adicionar Novo Convênio"):
-        with st.form("form_novo_convenio", clear_on_submit=True):
-            nome = st.text_input("Nome do Convênio")
-            tipo_servico = st.text_input("Tipo de Serviço (Ex: Saúde, Educação)")
-            descricao = st.text_area("Descrição Completa")
-            imagem_url = st.text_input("URL da Imagem de Destaque")
-            icon_url = st.text_input("URL do Ícone")
-            destaque = st.checkbox("Marcar como Destaque na Home")
-            status = st.selectbox("Status", ["ATIVO", "INATIVO"])
+    st.subheader("Adicionar/Editar Convênio")
 
-            if st.form_submit_button("Adicionar Convênio"):
-                if nome and tipo_servico and descricao:
-                    new_id = df_convenios['CONVENIO_ID'].max() + 1 if not df_convenios.empty else 1
-                    novo_convenio = {
-                        'CONVENIO_ID': int(new_id),
-                        'NOME_CONVENIO': nome,
-                        'TIPO_SERVICO': tipo_servico,
-                        'DESCRICAO': descricao,
-                        'IMAGEM_URL': imagem_url,
-                        'ICON_URL': icon_url,
-                        'DESTAQUE': destaque,
-                        'STATUS': status
-                    }
-                    if insert_record('convenios', novo_convenio):
-                        st.success(f"Convênio '{nome}' adicionado com sucesso!")
-                        st.cache_data.clear()
-                        st.rerun()
-                else:
-                    st.warning("Nome, Tipo de Serviço e Descrição são obrigatórios.")
+    convenio_options = {row['CONVENIO_ID']: row['NOME_CONVENIO'] for index, row in df_convenios.iterrows()}
+    convenio_options['new'] = 'Adicionar Novo'
+    selected_id = st.selectbox("Selecione um convênio para editar ou adicione um novo", options=list(convenio_options.keys()), format_func=lambda x: convenio_options[x])
 
-    st.divider()
+    convenio_data = {}
+    if selected_id != 'new':
+        convenio_data = df_convenios[df_convenios['CONVENIO_ID'] == selected_id].iloc[0].to_dict()
 
-    # Listagem e edição dos convênios existentes
-    st.write("Convênios Cadastrados")
-    if not df_convenios.empty:
-        for index, row in df_convenios.iterrows():
-            with st.container(border=True):
-                col1, col2 = st.columns([4, 1])
-                col1.subheader(row['NOME_CONVENIO'])
-                
-                with col2.expander("Editar/Excluir"):
-                    with st.form(f"form_edit_{row['CONVENIO_ID']}"):
-                        nome_edit = st.text_input("Nome", value=row['NOME_CONVENIO'], key=f"nome_{row['CONVENIO_ID']}")
-                        tipo_edit = st.text_input("Tipo", value=row['TIPO_SERVICO'], key=f"tipo_{row['CONVENIO_ID']}")
-                        desc_edit = st.text_area("Descrição", value=row['DESCRICAO'], key=f"desc_{row['CONVENIO_ID']}")
-                        img_edit = st.text_input("Imagem URL", value=row['IMAGEM_URL'], key=f"img_{row['CONVENIO_ID']}")
-                        icon_edit = st.text_input("Ícone URL", value=row['ICON_URL'], key=f"icon_{row['CONVENIO_ID']}")
-                        destaque_edit = st.checkbox("Destaque", value=row['DESTAQUE'], key=f"dest_{row['CONVENIO_ID']}")
-                        status_edit = st.selectbox("Status", ["ATIVO", "INATIVO"], index=["ATIVO", "INATIVO"].index(row['STATUS']), key=f"stat_{row['CONVENIO_ID']}")
+    with st.form("convenio_form", clear_on_submit=True):
+        nome = st.text_input("Nome do Convênio", value=convenio_data.get('NOME_CONVENIO', ''))
+        descricao = st_quill(value=convenio_data.get('DESCRICAO', ''), placeholder="Descreva o convênio...")
+        categoria = st.text_input("Tipo de Serviço", value=convenio_data.get('TIPO_SERVICO', ''))
+        icon_url = st.text_input("URL do Ícone", value=convenio_data.get('ICON_URL', ''))
+        imagem_url = st.text_input("URL da Imagem", value=convenio_data.get('IMAGEM_URL', ''))
+        destaque = st.checkbox("Destaque?", value=bool(convenio_data.get('DESTAQUE', 0)))
+        status = st.selectbox("Status", ["ATIVO", "INATIVO"], index=0 if convenio_data.get('STATUS', 'ATIVO') == 'ATIVO' else 1)
+        
+        uploaded_file = st.file_uploader("Ou faça upload de uma nova imagem", type=['png', 'jpg', 'jpeg'])
 
-                        col_edit, col_del = st.columns(2)
-                        if col_edit.form_submit_button("Salvar Alterações"):
-                            dados_atualizados = {
-                                'NOME_CONVENIO': nome_edit, 
-                                'TIPO_SERVICO': tipo_edit, 
-                                'DESCRICAO': desc_edit, 
-                                'IMAGEM_URL': img_edit, 
-                                'ICON_URL': icon_edit, 
-                                'DESTAQUE': destaque_edit, 
-                                'STATUS': status_edit
-                            }
-                            if update_record('convenios', dados_atualizados, {'CONVENIO_ID': row['CONVENIO_ID']}):
-                                st.success("Alterações salvas!")
-                                st.cache_data.clear()
-                                st.rerun()
-                        
-                        if col_del.form_submit_button("Excluir"):
-                            if delete_record('convenios', {'CONVENIO_ID': row['CONVENIO_ID']}):
-                                st.warning(f"Convênio '{row['NOME_CONVENIO']}' excluído.")
-                                st.cache_data.clear()
-                                st.rerun()
-    else:
-        st.info("Nenhum convênio cadastrado.")
+        submitted = st.form_submit_button("Salvar")
+
+        if submitted:
+            if uploaded_file is not None:
+                imagem_url = save_uploaded_file(uploaded_file, "convenios")
+
+            new_data = {
+                '"NOME_CONVENIO"': nome,
+                '"DESCRICAO"': descricao,
+                '"TIPO_SERVICO"': categoria,
+                '"ICON_URL"': icon_url,
+                '"IMAGEM_URL"': imagem_url,
+                '"DESTAQUE"': 1 if destaque else 0,
+                '"STATUS"': status
+            }
+
+            if selected_id == 'new':
+                insert_record('convenios', new_data)
+                st.success("Convênio adicionado com sucesso!")
+            else:
+                update_record('convenios', new_data, {'"CONVENIO_ID"': selected_id})
+                st.success("Convênio atualizado com sucesso!")
+            
+            st.rerun()
+
+    st.subheader("Excluir Convênio")
+    convenio_to_delete = st.selectbox("Selecione o convênio para excluir", options=list(convenio_options.keys())[:-1], format_func=lambda x: convenio_options[x], key="delete_convenio")
+    if st.button("Excluir Convênio"):
+        if convenio_to_delete:
+            delete_record('convenios', {'"CONVENIO_ID"': convenio_to_delete})
+            st.success("Convênio excluído com sucesso!")
+            st.rerun()
 
 def gerenciar_noticias():
-    st.subheader("Gerenciar Notícias")
-    
+    st.subheader("Gerenciamento de Notícias")
     df_noticias = carregar_dados_db('noticias')
 
-    with st.expander("➕ Adicionar Nova Notícia"):
-        with st.form("form_nova_noticia", clear_on_submit=True):
-            titulo = st.text_input("Título da Notícia")
-            conteudo = st_quill(placeholder="Escreva o conteúdo aqui...", html=True)
-            imagem_url = st.text_input("URL da Imagem de Capa")
-            destaque = st.checkbox("Marcar como Destaque na Home")
-            status = st.selectbox("Status da Publicação", ["PUBLICADO", "RASCUNHO"])
-            tags = st.text_input("Tags (separadas por vírgula)")
+    st.dataframe(df_noticias)
 
-            if st.form_submit_button("Salvar Notícia"):
-                if titulo and conteudo:
-                    new_id = df_noticias['ID'].max() + 1 if not df_noticias.empty else 1
-                    nova_noticia = {
-                        'ID': int(new_id),
-                        'TITULO': titulo,
-                        'CONTEUDO': conteudo,
-                        'DATA': datetime.now().strftime('%Y-%m-%d'),
-                        'IMAGEM_URL': imagem_url,
-                        'DESTAQUE': destaque,
-                        'STATUS': status,
-                        'TAGS': tags
-                    }
-                    if insert_record('noticias', nova_noticia):
-                        st.success("Notícia salva com sucesso!")
-                        st.cache_data.clear()
-                        st.rerun()
-                else:
-                    st.warning("Título e Conteúdo são obrigatórios.")
+    st.subheader("Adicionar/Editar Notícia")
 
-    st.divider()
-    st.write("Notícias Cadastradas")
-    
-    if not df_noticias.empty:
-        for index, row in df_noticias.iterrows():
-            with st.expander(f"{row['TITULO']} ({row['STATUS']})"):
-                with st.form(f"form_edit_noticia_{row['ID']}"):
-                    titulo_edit = st.text_input("Título", value=row['TITULO'], key=f"titulo_n_{row['ID']}")
-                    conteudo_edit = st_quill(value=row['CONTEUDO'], key=f"cont_n_{row['ID']}")
-                    imagem_edit = st.text_input("Imagem URL", value=row['IMAGEM_URL'], key=f"img_n_{row['ID']}")
-                    destaque_edit = st.checkbox("Destaque", value=row['DESTAQUE'], key=f"dest_n_{row['ID']}")
-                    status_edit = st.selectbox("Status", ["PUBLICADO", "RASCUNHO"], index=["PUBLICADO", "RASCUNHO"].index(row['STATUS']), key=f"stat_n_{row['ID']}")
-                    tags_edit = st.text_input("Tags", value=row.get('TAGS', ''), key=f"tags_n_{row['ID']}")
+    noticia_options = {row['ID']: row['TITULO'] for index, row in df_noticias.iterrows()}
+    noticia_options['new'] = 'Adicionar Nova'
+    selected_id = st.selectbox("Selecione uma notícia para editar ou adicione uma nova", options=list(noticia_options.keys()), format_func=lambda x: noticia_options[x])
 
-                    col_edit, col_del = st.columns(2)
-                    if col_edit.form_submit_button("Salvar"):
-                        dados_atualizados = {
-                            'TITULO': titulo_edit, 
-                            'CONTEUDO': conteudo_edit, 
-                            'IMAGEM_URL': imagem_edit, 
-                            'DESTAQUE': destaque_edit, 
-                            'STATUS': status_edit, 
-                            'TAGS': tags_edit
-                        }
-                        if update_record('noticias', dados_atualizados, {'ID': row['ID']}):
-                            st.success("Notícia atualizada.")
-                            st.cache_data.clear()
-                            st.rerun()
-                    
-                    if col_del.form_submit_button("Excluir"):
-                        if delete_record('noticias', {'ID': row['ID']}):
-                            st.warning("Notícia excluída.")
-                            st.cache_data.clear()
-                            st.rerun()
-    else:
-        st.info("Nenhuma notícia cadastrada.")
+    noticia_data = {}
+    if selected_id != 'new':
+        noticia_data = df_noticias[df_noticias['ID'] == selected_id].iloc[0].to_dict()
+
+    with st.form("noticia_form", clear_on_submit=True):
+        titulo = st.text_input("Título", value=noticia_data.get('TITULO', ''))
+        conteudo = st_quill(value=noticia_data.get('CONTEUDO', ''), placeholder="Conteúdo da notícia...")
+        imagem_url = st.text_input("URL da Imagem", value=noticia_data.get('IMAGEM_URL', ''))
+        destaque = st.checkbox("Destaque?", value=bool(noticia_data.get('DESTAQUE', 0)))
+        status = st.selectbox("Status", ["ATIVO", "INATIVO"], index=0 if noticia_data.get('STATUS', 'ATIVO') == 'ATIVO' else 1)
+        tags = st.text_input("Tags", value=noticia_data.get('TAGS', ''))
+        
+        uploaded_file = st.file_uploader("Ou faça upload de uma nova imagem", type=['png', 'jpg', 'jpeg'])
+
+        submitted = st.form_submit_button("Salvar")
+
+        if submitted:
+            if uploaded_file is not None:
+                imagem_url = save_uploaded_file(uploaded_file, "noticias")
+
+            new_data = {
+                '"TITULO"': titulo,
+                '"CONTEUDO"': conteudo,
+                '"IMAGEM_URL"': imagem_url,
+                '"DESTAQUE"': 1 if destaque else 0,
+                '"STATUS"': status,
+                '"DATA"': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                '"TAGS"': tags
+            }
+
+            if selected_id == 'new':
+                insert_record('noticias', new_data)
+                st.success("Notícia adicionada com sucesso!")
+            else:
+                update_record('noticias', new_data, {'"ID"': selected_id})
+                st.success("Notícia atualizada com sucesso!")
+            
+            st.rerun()
+
+    st.subheader("Excluir Notícia")
+    noticia_to_delete = st.selectbox("Selecione a notícia para excluir", options=list(noticia_options.keys())[:-1], format_func=lambda x: noticia_options[x], key="delete_noticia")
+    if st.button("Excluir Notícia"):
+        if noticia_to_delete:
+            delete_record('noticias', {'"ID"': noticia_to_delete})
+            st.success("Notícia excluída com sucesso!")
+            st.rerun()
 
 def gerenciar_eventos():
-    st.subheader("Gerenciar Eventos")
-    
+    st.subheader("Gerenciamento de Eventos")
     df_eventos = carregar_dados_db('eventos')
 
-    with st.expander("➕ Adicionar Novo Evento"):
-        with st.form("form_novo_evento", clear_on_submit=True):
-            titulo = st.text_input("Título do Evento")
-            descricao = st.text_area("Descrição")
-            data_evento = st.date_input("Data do Evento")
-            hora_evento = st.time_input("Hora do Evento")
-            local = st.text_input("Local")
-            imagem_url = st.text_input("URL da Imagem")
-            status = st.selectbox("Status", ["AGENDADO", "REALIZADO", "CANCELADO"])
+    st.dataframe(df_eventos)
 
-            if st.form_submit_button("Adicionar Evento"):
-                if titulo and descricao and data_evento and hora_evento and local:
-                    new_id = df_eventos['EVENTO_ID'].max() + 1 if not df_eventos.empty else 1
-                    novo_evento = {
-                        'EVENTO_ID': int(new_id),
-                        'TITULO': titulo,
-                        'DESCRICAO': descricao,
-                        'DATA_EVENTO': data_evento.strftime('%Y-%m-%d'),
-                        'HORA_EVENTO': hora_evento.strftime('%H:%M'),
-                        'LOCAL': local,
-                        'IMAGEM_URL': imagem_url,
-                        'STATUS': status
-                    }
-                    if insert_record('eventos', novo_evento):
-                        st.success(f"Evento '{titulo}' adicionado com sucesso!")
-                        st.cache_data.clear()
-                        st.rerun()
-                else:
-                    st.warning("Todos os campos, exceto imagem, são obrigatórios.")
+    st.subheader("Adicionar/Editar Evento")
 
-    st.divider()
-    st.write("Eventos Cadastrados")
+    evento_options = {row['EVENTO_ID']: row['TITULO'] for index, row in df_eventos.iterrows()}
+    evento_options['new'] = 'Adicionar Novo'
+    selected_id = st.selectbox("Selecione um evento para editar ou adicione um novo", options=list(evento_options.keys()), format_func=lambda x: evento_options[x])
 
-    if not df_eventos.empty:
-        for index, row in df_eventos.iterrows():
-            with st.expander(f"{row['TITULO']} - {pd.to_datetime(row['DATA_EVENTO']).strftime('%d/%m/%Y')}"):
-                with st.form(f"form_edit_evento_{row['EVENTO_ID']}"):
-                    titulo_edit = st.text_input("Título", value=row['TITULO'], key=f"titulo_e_{row['EVENTO_ID']}")
-                    desc_edit = st.text_area("Descrição", value=row['DESCRICAO'], key=f"desc_e_{row['EVENTO_ID']}")
-                    data_edit = st.date_input("Data", value=pd.to_datetime(row['DATA_EVENTO']), key=f"data_e_{row['EVENTO_ID']}")
-                    hora_edit = st.time_input("Hora", value=datetime.strptime(row['HORA_EVENTO'], '%H:%M').time(), key=f"hora_e_{row['EVENTO_ID']}")
-                    local_edit = st.text_input("Local", value=row['LOCAL'], key=f"local_e_{row['EVENTO_ID']}")
-                    img_edit = st.text_input("Imagem URL", value=row['IMAGEM_URL'], key=f"img_e_{row['EVENTO_ID']}")
-                    status_edit = st.selectbox("Status", ["AGENDADO", "REALIZADO", "CANCELADO"], index=["AGENDADO", "REALIZADO", "CANCELADO"].index(row['STATUS']), key=f"stat_e_{row['EVENTO_ID']}")
+    evento_data = {}
+    if selected_id != 'new':
+        evento_data = df_eventos[df_eventos['EVENTO_ID'] == selected_id].iloc[0].to_dict()
 
-                    col_edit, col_del = st.columns(2)
-                    if col_edit.form_submit_button("Salvar Alterações"):
-                        dados_atualizados = {
-                            'TITULO': titulo_edit, 
-                            'DESCRICAO': desc_edit, 
-                            'DATA_EVENTO': data_edit.strftime('%Y-%m-%d'), 
-                            'HORA_EVENTO': hora_edit.strftime('%H:%M'), 
-                            'LOCAL': local_edit, 
-                            'IMAGEM_URL': img_edit, 
-                            'STATUS': status_edit
-                        }
-                        if update_record('eventos', dados_atualizados, {'EVENTO_ID': row['EVENTO_ID']}):
-                            st.success("Alterações salvas!")
-                            st.cache_data.clear()
-                            st.rerun()
-                    
-                    if col_del.form_submit_button("Excluir"):
-                        if delete_record('eventos', {'EVENTO_ID': row['EVENTO_ID']}):
-                            st.warning(f"Evento '{row['TITULO']}' excluído.")
-                            st.cache_data.clear()
-                            st.rerun()
-    else:
-        st.info("Nenhum evento cadastrado.")
+    with st.form("evento_form", clear_on_submit=True):
+        titulo = st.text_input("Título do Evento", value=evento_data.get('TITULO', ''))
+        descricao = st_quill(value=evento_data.get('DESCRICAO', ''), placeholder="Descrição do evento...")
+        data_evento = st.date_input("Data do Evento", value=pd.to_datetime(evento_data.get('DATA_EVENTO'))) if 'DATA_EVENTO' in evento_data else st.date_input("Data do Evento")
+        hora_evento = st.text_input("Hora do Evento", value=evento_data.get('HORA_EVENTO', ''))
+        local = st.text_input("Local", value=evento_data.get('LOCAL', ''))
+        imagem_url = st.text_input("URL da Imagem", value=evento_data.get('IMAGEM_URL', ''))
+        status = st.selectbox("Status", ["ATIVO", "INATIVO"], index=0 if evento_data.get('STATUS', 'ATIVO') == 'ATIVO' else 1)
+        
+        uploaded_file = st.file_uploader("Ou faça upload de uma nova imagem", type=['png', 'jpg', 'jpeg'])
+
+        submitted = st.form_submit_button("Salvar")
+
+        if submitted:
+            if uploaded_file is not None:
+                imagem_url = save_uploaded_file(uploaded_file, "eventos")
+
+            new_data = {
+                '"TITULO"': titulo,
+                '"DESCRICAO"': descricao,
+                '"DATA_EVENTO"': data_evento.strftime("%Y-%m-%d"),
+                '"HORA_EVENTO"': hora_evento,
+                '"LOCAL"': local,
+                '"IMAGEM_URL"': imagem_url,
+                '"STATUS"': status
+            }
+
+            if selected_id == 'new':
+                insert_record('eventos', new_data)
+                st.success("Evento adicionado com sucesso!")
+            else:
+                update_record('eventos', new_data, {'"EVENTO_ID"': selected_id})
+                st.success("Evento atualizado com sucesso!")
+            
+            st.rerun()
+
+    st.subheader("Excluir Evento")
+    evento_to_delete = st.selectbox("Selecione o evento para excluir", options=list(evento_options.keys())[:-1], format_func=lambda x: evento_options[x], key="delete_evento")
+    if st.button("Excluir Evento"):
+        if evento_to_delete:
+            delete_record('eventos', {'"EVENTO_ID"': evento_to_delete})
+            st.success("Evento excluído com sucesso!")
+            st.rerun()
 
 def gerenciar_financas():
-    st.subheader("Gerenciar Finanças")
-    
+    st.subheader("Gerenciamento Financeiro")
+
+    df_usuarios = carregar_dados_db('usuarios')
+    df_servicos = carregar_dados_db('servicos')
     df_financas = carregar_dados_db('financas')
+
+    total_por_status = df_financas.groupby('STATUS')['VALOR'].sum().reindex(["PENDENTE", "PAGO", "VENCIDO"]).fillna(0)
     
+    st.markdown("""
+    <style>
+    .metric-container {
+        border: 2px solid #ccc;
+        border-radius: 10px;
+        padding: 15px;
+        text-align: center;
+    }
+    .metric-container .stMetric-label {
+        font-weight: bold;
+    }
+    .metric-container .stMetric-value {
+        font-size: 24px;
+    }
+    .metric-container.pending { border-color: #ffc107; }
+    .metric-container.paid { border-color: #28a745; }
+    .metric-container.overdue { border-color: #dc3545; }
+    </style>
+    """, unsafe_allow_html=True)
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.markdown(f'<div class="metric-container pending"><b>Total Pendente</b><br><span class="stMetric-value">R$ {total_por_status['PENDENTE']:.2f}</span></div>', unsafe_allow_html=True)
+    with col2:
+        st.markdown(f'<div class="metric-container paid"><b>Total Pago</b><br><span class="stMetric-value">R$ {total_por_status['PAGO']:.2f}</span></div>', unsafe_allow_html=True)
+    with col3:
+        st.markdown(f'<div class="metric-container overdue"><b>Total Vencido</b><br><span class="stMetric-value">R$ {total_por_status['VENCIDO']:.2f}</span></div>', unsafe_allow_html=True)
+    st.markdown("---")
+
+    st.subheader("Adicionar Novas Cobranças")
+    with st.expander("Adicionar Novo Registro Financeiro"):
+        with st.form("form_add_financa", clear_on_submit=True):
+            
+            user_options = {row['ID']: row['NOME'] for index, row in df_usuarios.iterrows()}
+            if not user_options:
+                st.warning("Nenhum usuário cadastrado. Adicione usuários antes de criar registros financeiros.")
+                return
+
+            selected_user_id = st.selectbox("Selecione o Usuário", options=list(user_options.keys()), format_func=lambda x: user_options[x])
+
+            servico_contratado = ""
+            valor = 0.0
+
+            if selected_user_id:
+                selected_user = df_usuarios[df_usuarios['ID'] == selected_user_id].iloc[0]
+                servico_contratado = selected_user.get('SERVICO_ESCOLHIDO', '')
+                
+                if servico_contratado:
+                    servico_info_row = df_servicos[df_servicos['TIPO_SERVICO'] == servico_contratado.split(' - ')[0]]
+                    if not servico_info_row.empty:
+                        valor = servico_info_row.iloc[0].get('VALOR_MENSAL', 0.0)
+
+            servico_contratado_input = st.text_input("Serviço Contratado", value=servico_contratado)
+            valor_input = st.number_input("Valor", min_value=0.0, value=float(valor), format="%.2f")
+            data_vencimento = st.date_input("Data de Vencimento")
+            status = st.selectbox("Status", ["PENDENTE", "PAGO", "VENCIDO"])
+            submit_button = st.form_submit_button("Adicionar Registro")
+
+            if submit_button:
+                max_id = get_max_id('financas', '"COBRANCA_ID"')
+                new_id = int(max_id) + 1 if max_id else 1
+                
+                novo_registro = {
+                    '"COBRANCA_ID"': new_id,
+                    '"USER_ID"': selected_user_id,
+                    '"SERVICO_CONTRATADO"': servico_contratado_input,
+                    '"VALOR"': valor_input,
+                    '"DATA_EMISSAO"': pd.to_datetime("today").strftime('%Y-%m-%d'),
+                    '"DATA_VENCIMENTO"': data_vencimento.strftime('%Y-%m-%d'),
+                    '"STATUS"': status
+                }
+                if insert_record('financas', novo_registro):
+                    st.success("Registro financeiro adicionado com sucesso!")
+                    st.rerun()
+                else:
+                    st.error("Erro ao adicionar registro financeiro.")
+    
+    st.subheader("Atualizar Status de Cobranças Existentes e Excluir Registros Financeiros")
     if df_financas.empty:
         st.info("Nenhum registro financeiro encontrado.")
-        return
+        return  
+    with st.form("form_update_financa"):
+        financa_options = {row['COBRANCA_ID']: f"ID {row['COBRANCA_ID']} - Usuário {row['USER_ID']} - Valor R$ {row['VALOR']:.2f} - Status {row['STATUS']}" for index, row in df_financas.iterrows()}
+        selected_financa_id = st.selectbox("Selecione o Registro Financeiro", options=list(financa_options.keys()), format_func=lambda x: financa_options[x])
 
-    st.write("Histórico de Transações")
-    
-    # Filtros
-    col1, col2, col3 = st.columns(3)
-    status_filter = col1.multiselect("Filtrar por Status", options=df_financas['STATUS'].unique(), default=df_financas['STATUS'].unique())
-    
-    df_filtered = df_financas[df_financas['STATUS'].isin(status_filter)]
-    
-    st.dataframe(df_filtered)
+        if selected_financa_id:
+            selected_financa = df_financas[df_financas['COBRANCA_ID'] == selected_financa_id].iloc[0]
+            new_status = st.selectbox("Atualizar Status", ["PENDENTE", "PAGO", "VENCIDO"], index=["PENDENTE", "PAGO", "VENCIDO"].index(selected_financa['STATUS']))
+            update_button = st.form_submit_button("Atualizar Status")
+            delete_button = st.form_submit_button("Excluir Registro")
+
+            if update_button:
+                if update_record('financas', {'"STATUS"': new_status}, {'"COBRANCA_ID"': selected_financa_id}):
+                    st.success("Status atualizado com sucesso!")
+                    st.rerun()
+                else:
+                    st.error("Erro ao atualizar status.")
+
+            if delete_button:
+                if delete_record('financas', {'"COBRANCA_ID"': selected_financa_id}):
+                    st.success("Registro financeiro excluído com sucesso!")
+                    st.rerun()
+                else:
+                    st.error("Erro ao excluir registro financeiro.")    
+
+    st.markdown("---")
+    st.subheader("Registros Financeiros")
+    st.dataframe(df_financas)
 
 def gerenciar_parceiros():
-    st.subheader("Gerenciar Parceiros")
-    
+    st.subheader("Gerenciamento de Parceiros")
     df_parceiros = carregar_dados_db('parceiros')
-    df_convenios = carregar_dados_db('convenios')
-    
-    if df_convenios.empty:
-        st.warning("Cadastre um convênio antes de adicionar parceiros.")
-        return
 
-    convenio_map = dict(zip(df_convenios['CONVENIO_ID'], df_convenios['NOME_CONVENIO']))
+    st.dataframe(df_parceiros)
 
-    with st.expander("➕ Adicionar Novo Parceiro"):
-        with st.form("form_novo_parceiro", clear_on_submit=True):
-            convenio_id = st.selectbox("Convênio Associado", options=convenio_map.keys(), format_func=lambda x: convenio_map[x])
-            nome = st.text_input("Nome do Parceiro")
-            detalhes = st.text_area("Detalhes (descontos, etc)")
-            endereco = st.text_input("Endereço")
-            telefone = st.text_input("Telefone")
-            website = st.text_input("Website")
+    st.subheader("Adicionar/Editar Parceiro")
 
-            if st.form_submit_button("Adicionar Parceiro"):
-                if nome and convenio_id:
-                    new_id = df_parceiros['PARCEIRO_ID'].max() + 1 if not df_parceiros.empty else 1
-                    novo_parceiro = {
-                        'PARCEIRO_ID': int(new_id),
-                        'CONVENIO_ID': convenio_id,
-                        'NOME_PARCEIRO': nome,
-                        'DETALHES': detalhes,
-                        'ENDERECO': endereco,
-                        'TELEFONE': telefone,
-                        'WEBSITE': website
-                    }
-                    if insert_record('parceiros', novo_parceiro):
-                        st.success(f"Parceiro '{nome}' adicionado com sucesso!")
-                        st.cache_data.clear()
-                        st.rerun()
-                else:
-                    st.warning("Nome e Convênio são obrigatórios.")
+    parceiro_options = {row['PARCEIRO_ID']: row['NOME_PARCEIRO'] for index, row in df_parceiros.iterrows()}
+    parceiro_options['new'] = 'Adicionar Novo'
+    selected_id = st.selectbox("Selecione um parceiro para editar ou adicione um novo", options=list(parceiro_options.keys()), format_func=lambda x: parceiro_options[x])
 
-    st.divider()
-    st.write("Parceiros Cadastrados")
+    parceiro_data = {}
+    if selected_id != 'new':
+        parceiro_data = df_parceiros[df_parceiros['PARCEIRO_ID'] == selected_id].iloc[0].to_dict()
 
-    if not df_parceiros.empty:
-        for index, row in df_parceiros.iterrows():
-            with st.expander(f"{row['NOME_PARCEIRO']} (Convênio: {convenio_map.get(row['CONVENIO_ID'], 'N/A')})"):
-                with st.form(f"form_edit_parceiro_{row['PARCEIRO_ID']}"):
-                    convenio_id_edit = st.selectbox("Convênio", options=convenio_map.keys(), format_func=lambda x: convenio_map[x], index=list(convenio_map.keys()).index(row['CONVENIO_ID']), key=f"conv_p_{row['PARCEIRO_ID']}")
-                    nome_edit = st.text_input("Nome", value=row['NOME_PARCEIRO'], key=f"nome_p_{row['PARCEIRO_ID']}")
-                    detalhes_edit = st.text_area("Detalhes", value=row['DETALHES'], key=f"det_p_{row['PARCEIRO_ID']}")
-                    endereco_edit = st.text_input("Endereço", value=row['ENDERECO'], key=f"end_p_{row['PARCEIRO_ID']}")
-                    telefone_edit = st.text_input("Telefone", value=row['TELEFONE'], key=f"tel_p_{row['PARCEIRO_ID']}")
-                    website_edit = st.text_input("Website", value=row['WEBSITE'], key=f"web_p_{row['PARCEIRO_ID']}")
+    with st.form("parceiro_form", clear_on_submit=True):
+        nome = st.text_input("Nome do Parceiro", value=parceiro_data.get('NOME_PARCEIRO', ''))
+        contato_nome = st.text_input("Nome do Contato", value=parceiro_data.get('CONTATO_NOME', ''))
+        email = st.text_input("Email", value=parceiro_data.get('EMAIL', ''))
+        telefone = st.text_input("Telefone", value=parceiro_data.get('TELEFONE', ''))
+        detalhes = st_quill(value=parceiro_data.get('DETALHES', ''), placeholder="Detalhes do parceiro...")
+        status = st.selectbox("Status", ["ATIVO", "INATIVO"], index=0 if parceiro_data.get('STATUS', 'ATIVO') == 'ATIVO' else 1)
+        
+        submitted = st.form_submit_button("Salvar")
 
-                    col_edit, col_del = st.columns(2)
-                    if col_edit.form_submit_button("Salvar"):
-                        dados_atualizados = {
-                            'CONVENIO_ID': convenio_id_edit, 
-                            'NOME_PARCEIRO': nome_edit, 
-                            'DETALHES': detalhes_edit, 
-                            'ENDERECO': endereco_edit, 
-                            'TELEFONE': telefone_edit, 
-                            'WEBSITE': website_edit
-                        }
-                        if update_record('parceiros', dados_atualizados, {'PARCEIRO_ID': row['PARCEIRO_ID']}):
-                            st.success("Parceiro atualizado.")
-                            st.cache_data.clear()
-                            st.rerun()
-                    
-                    if col_del.form_submit_button("Excluir"):
-                        if delete_record('parceiros', {'PARCEIRO_ID': row['PARCEIRO_ID']}):
-                            st.warning("Parceiro excluído.")
-                            st.cache_data.clear()
-                            st.rerun()
-    else:
-        st.info("Nenhum parceiro cadastrado.")
+        if submitted:
+            new_data = {
+                '"NOME_PARCEIRO"': nome,
+                '"CONTATO_NOME"': contato_nome,
+                '"EMAIL"': email,
+                '"TELEFONE"': telefone,
+                '"DETALHES"': detalhes,
+                '"STATUS"': status
+            }
+
+            if selected_id == 'new':
+                insert_record('parceiros', new_data)
+                st.success("Parceiro adicionado com sucesso!")
+            else:
+                update_record('parceiros', new_data, {'"PARCEIRO_ID"': selected_id})
+                st.success("Parceiro atualizado com sucesso!")
+            
+            st.rerun()
+
+    st.subheader("Excluir Parceiro")
+    parceiro_to_delete = st.selectbox("Selecione o parceiro para excluir", options=list(parceiro_options.keys())[:-1], format_func=lambda x: parceiro_options[x], key="delete_parceiro")
+    if st.button("Excluir Parceiro"):
+        if parceiro_to_delete:
+            delete_record('parceiros', {'"PARCEIRO_ID"': parceiro_to_delete})
+            st.success("Parceiro excluído com sucesso!")
+            st.rerun()
 
 def gerenciar_servicos():
-    st.subheader("Gerenciar Serviços e Planos")
-    
+    st.subheader("Gerenciamento de Serviços")
     df_servicos = carregar_dados_db('servicos')
 
-    with st.expander("➕ Adicionar Novo Serviço"):
-        with st.form("form_novo_servico", clear_on_submit=True):
-            tipo_servico = st.text_input("Tipo de Serviço (Ex: Plano Odontológico)")
-            descricao = st.text_area("Descrição do Serviço")
-            valor_mensal = st.number_input("Valor Mensal (R$)", min_value=0.0, format="%.2f")
-            cupom_mensal = st.number_input("Cupom Mensal (R$)", min_value=0.0, format="%.2f")
-            cupom_semestral = st.number_input("Cupom Semestral (%)", min_value=0.0, max_value=100.0)
-            cupom_anual = st.number_input("Cupom Anual (%)", min_value=0.0, max_value=100.0)
-            valor_adicional = st.number_input("Valor por Dependente (R$)", min_value=0.0, format="%.2f")
+    st.dataframe(df_servicos)
 
-            if st.form_submit_button("Adicionar Serviço"):
-                if tipo_servico and valor_mensal > 0:
-                    new_id = df_servicos['SERVICO_ID'].max() + 1 if not df_servicos.empty else 1
-                    novo_servico = {
-                        'SERVICO_ID': int(new_id),
-                        'TIPO_SERVICO': tipo_servico,
-                        'DESCRICAO_SERVICO': descricao,
-                        'VALOR_MENSAL': valor_mensal,
-                        'CUPOM_MESAL': cupom_mensal,
-                        'CUPOM_SEMESTRAL': cupom_semestral,
-                        'CUPOM_ANUAL': cupom_anual,
-                        'VALOR_ADICIONAL': valor_adicional
-                    }
-                    if insert_record('servicos', novo_servico):
-                        st.success(f"Serviço '{tipo_servico}' adicionado com sucesso!")
-                        st.cache_data.clear()
-                        st.rerun()
-                else:
-                    st.warning("Tipo de Serviço and Valor Mensal are required.")
+    st.subheader("Adicionar/Editar Serviço")
 
-    st.divider()
-    st.write("Serviços Cadastrados")
+    servico_options = {row['SERVICO_ID']: row['TIPO_SERVICO'] for index, row in df_servicos.iterrows()}
+    servico_options['new'] = 'Adicionar Novo'
+    selected_id = st.selectbox("Selecione um serviço para editar ou adicione um novo", options=list(servico_options.keys()), format_func=lambda x: servico_options[x])
 
-    if not df_servicos.empty:
-        for index, row in df_servicos.iterrows():
-            with st.expander(f"{row['TIPO_SERVICO']}"):
-                with st.form(f"form_edit_servico_{row['SERVICO_ID']}"):
-                    tipo_servico_edit = st.text_input("Tipo de Serviço", value=row['TIPO_SERVICO'], key=f"tipo_s_{row['SERVICO_ID']}")
-                    desc_edit = st.text_area("Descrição", value=row['DESCRICAO_SERVICO'], key=f"desc_s_{row['SERVICO_ID']}")
-                    valor_mensal_edit = st.number_input("Valor Mensal (R$)", value=row['VALOR_MENSAL'], min_value=0.0, format="%.2f", key=f"valor_s_{row['SERVICO_ID']}")
-                    cupom_mensal_edit = st.number_input("Cupom Mensal (R$)", value=row['CUPOM_MESAL'], min_value=0.0, format="%.2f", key=f"cupom_m_s_{row['SERVICO_ID']}")
-                    cupom_semestral_edit = st.number_input("Cupom Semestral (%)", value=float(row['CUPOM_SEMESTRAL']), min_value=0.0, max_value=100.0, key=f"cupom_s_s_{row['SERVICO_ID']}")
-                    cupom_anual_edit = st.number_input("Cupom Anual (%)", value=float(row['CUPOM_ANUAL']), min_value=0.0, max_value=100.0, key=f"cupom_a_s_{row['SERVICO_ID']}")
-                    valor_adicional_edit = st.number_input("Valor por Dependente (R$)", value=row['VALOR_ADICIONAL'], min_value=0.0, format="%.2f", key=f"add_s_{row['SERVICO_ID']}")
+    servico_data = {}
+    if selected_id != 'new':
+        servico_data = df_servicos[df_servicos['SERVICO_ID'] == selected_id].iloc[0].to_dict()
 
-                    col_edit, col_del = st.columns(2)
-                    if col_edit.form_submit_button("Salvar"):
-                        dados_atualizados = {
-                            'TIPO_SERVICO': tipo_servico_edit, 
-                            'DESCRICAO_SERVICO': desc_edit, 
-                            'VALOR_MENSAL': valor_mensal_edit, 
-                            'CUPOM_MESAL': cupom_mensal_edit, 
-                            'CUPOM_SEMESTRAL': cupom_semestral_edit, 
-                            'CUPOM_ANUAL': cupom_anual_edit, 
-                            'VALOR_ADICIONAL': valor_adicional_edit
-                        }
-                        if update_record('servicos', dados_atualizados, {'SERVICO_ID': row['SERVICO_ID']}):
-                            st.success("Serviço atualizado.")
-                            st.cache_data.clear()
-                            st.rerun()
-                    
-                    if col_del.form_submit_button("Excluir"):
-                        if delete_record('servicos', {'SERVICO_ID': row['SERVICO_ID']}):
-                            st.warning("Serviço excluído.")
-                            st.cache_data.clear()
-                            st.rerun()
-    else:
-        st.info("Nenhum serviço cadastrado.")
+    with st.form("servico_form", clear_on_submit=True):
+        tipo_servico = st.text_input("Tipo de Serviço", value=servico_data.get('TIPO_SERVICO', ''))
+        descricao = st_quill(value=servico_data.get('DESCRICAO_SERVICO', ''), placeholder="Descrição do serviço...")
+        valor_mensal = st.number_input("Valor Mensal", value=servico_data.get('VALOR_MENSAL', 0.0))
+        
+        submitted = st.form_submit_button("Salvar")
+
+        if submitted:
+            new_data = {
+                '"TIPO_SERVICO"': tipo_servico,
+                '"DESCRICAO_SERVICO"': descricao,
+                '"VALOR_MENSAL"': valor_mensal
+            }
+
+            if selected_id == 'new':
+                insert_record('servicos', new_data)
+                st.success("Serviço adicionado com sucesso!")
+            else:
+                update_record('servicos', new_data, {'"SERVICO_ID"': selected_id})
+                st.success("Serviço atualizado com sucesso!")
+            
+            st.rerun()
+
+    st.subheader("Excluir Serviço")
+    servico_to_delete = st.selectbox("Selecione o serviço para excluir", options=list(servico_options.keys())[:-1], format_func=lambda x: servico_options[x], key="delete_servico")
+    if st.button("Excluir Serviço"):
+        if servico_to_delete:
+            delete_record('servicos', {'"SERVICO_ID"': servico_to_delete})
+            st.success("Serviço excluído com sucesso!")
+            st.rerun()
 
 def gerenciar_beneficios():
-    st.subheader("Gerenciar Benefícios")
-    
+    st.subheader("Gerenciamento de Benefícios")
     df_beneficios = carregar_dados_db('beneficios')
 
-    with st.expander("➕ Adicionar Novo Benefício"):
-        with st.form("form_novo_beneficio", clear_on_submit=True):
-            titulo = st.text_input("Título do Benefício")
-            descricao = st.text_area("Descrição do Benefício")
-            icone = st.text_input("Ícone (Emoji)")
+    st.dataframe(df_beneficios)
 
-            if st.form_submit_button("Adicionar Benefício"):
-                if titulo and descricao:
-                    new_id = df_beneficios['BENEFICIO_ID'].max() + 1 if not df_beneficios.empty else 1
-                    novo_beneficio = {
-                        'BENEFICIO_ID': int(new_id),
-                        'TITULO': titulo,
-                        'DESCRICAO_BENEFICIO': descricao,
-                        'ICONE': icone
-                    }
-                    if insert_record('beneficios', novo_beneficio):
-                        st.success(f"Benefício '{titulo}' adicionado com sucesso!")
-                        st.cache_data.clear()
-                        st.rerun()
-                else:
-                    st.warning("Título e Descrição são obrigatórios.")
+    st.subheader("Adicionar/Editar Benefício")
 
-    st.divider()
-    st.write("Benefícios Cadastrados")
+    beneficio_options = {row['BENEFICIO_ID']: row['TITULO'] for index, row in df_beneficios.iterrows()}
+    beneficio_options['new'] = 'Adicionar Novo'
+    selected_id = st.selectbox("Selecione um benefício para editar ou adicione um novo", options=list(beneficio_options.keys()), format_func=lambda x: beneficio_options[x])
 
-    if not df_beneficios.empty:
-        for index, row in df_beneficios.iterrows():
-            with st.expander(f"{row['ICONE']} {row['TITULO']}"):
-                with st.form(f"form_edit_beneficio_{row['BENEFICIO_ID']}"):
-                    titulo_edit = st.text_input("Título", value=row['TITULO'], key=f"titulo_b_{row['BENEFICIO_ID']}")
-                    desc_edit = st.text_area("Descrição", value=row['DESCRICAO_BENEFICIO'], key=f"desc_b_{row['BENEFICIO_ID']}")
-                    icone_edit = st.text_input("Ícone", value=row['ICONE'], key=f"icon_b_{row['BENEFICIO_ID']}")
+    beneficio_data = {}
+    if selected_id != 'new':
+        beneficio_data = df_beneficios[df_beneficios['BENEFICIO_ID'] == selected_id].iloc[0].to_dict()
 
-                    col_edit, col_del = st.columns(2)
-                    if col_edit.form_submit_button("Salvar"):
-                        dados_atualizados = {
-                            'TITULO': titulo_edit, 
-                            'DESCRICAO_BENEFICIO': desc_edit, 
-                            'ICONE': icone_edit
-                        }
-                        if update_record('beneficios', dados_atualizados, {'BENEFICIO_ID': row['BENEFICIO_ID']}):
-                            st.success("Benefício atualizado.")
-                            st.cache_data.clear()
-                            st.rerun()
-                    
-                    if col_del.form_submit_button("Excluir"):
-                        if delete_record('beneficios', {'BENEFICIO_ID': row['BENEFICIO_ID']}):
-                            st.warning("Benefício excluído.")
-                            st.cache_data.clear()
-                            st.rerun()
-    else:
-        st.info("Nenhum benefício cadastrado.")
+    with st.form("beneficio_form", clear_on_submit=True):
+        titulo = st.text_input("Título do Benefício", value=beneficio_data.get('TITULO', ''))
+        descricao = st_quill(value=beneficio_data.get('DESCRICAO_BENEFICIO', ''), placeholder="Descrição do benefício...")
+        icone = st.text_input("Ícone", value=beneficio_data.get('ICONE', ''))
+        
+        submitted = st.form_submit_button("Salvar")
+
+        if submitted:
+            new_data = {
+                '"TITULO"': titulo,
+                '"DESCRICAO_BENEFICIO"': descricao,
+                '"ICONE"': icone
+            }
+
+            if selected_id == 'new':
+                insert_record('beneficios', new_data)
+                st.success("Benefício adicionado com sucesso!")
+            else:
+                update_record('beneficios', new_data, {'"BENEFICIO_ID"': selected_id})
+                st.success("Benefício atualizado com sucesso!")
+            
+            st.rerun()
+
+    st.subheader("Excluir Benefício")
+    beneficio_to_delete = st.selectbox("Selecione o benefício para excluir", options=list(beneficio_options.keys())[:-1], format_func=lambda x: beneficio_options[x], key="delete_beneficio")
+    if st.button("Excluir Benefício"):
+        if beneficio_to_delete:
+            delete_record('beneficios', {'"BENEFICIO_ID"': beneficio_to_delete})
+            st.success("Benefício excluído com sucesso!")
+            st.rerun()
 
 def gerenciar_comentarios():
-    st.subheader("Moderar Comentários")
-    
-    df_comentarios = carregar_dados_db('comentarios')
-    
-    if df_comentarios.empty:
-        st.info("Nenhum comentário para moderar.")
-        return
-
-    st.write("Comentários pendentes de aprovação, aprovados e rejeitados.")
-    
-    status_filter = st.selectbox("Filtrar por Status", options=['PENDENTE', 'APROVADO', 'REJEITADO'])
-    
-    df_filtered = df_comentarios[df_comentarios['STATUS'] == status_filter]
-
-    if df_filtered.empty:
-        st.info(f"Nenhum comentário com o status '{status_filter}'.")
-    else:
-        for index, row in df_filtered.iterrows():
-            with st.container(border=True):
-                st.write(f"**Autor:** {row['NOME_USUARIO']} em {row['TIMESTAMP']}")
-                st.write(f"**Notícia ID:** {row['NOTICIA_ID']}")
-                st.info(f"**Comentário:** {row['COMENTARIO']}")
-
-                if row['STATUS'] == 'PENDENTE':
-                    col1, col2 = st.columns(2)
-                    if col1.button("Aprovar", key=f"approve_c_{row['COMENTARIO_ID']}"):
-                        if update_record('comentarios', {'STATUS': 'APROVADO'}, {'COMENTARIO_ID': row['COMENTARIO_ID']}):
-                            st.success("Comentário aprovado.")
-                            st.cache_data.clear()
-                            st.rerun()
-                    if col2.button("Rejeitar", key=f"reject_c_{row['COMENTARIO_ID']}"):
-                        if update_record('comentarios', {'STATUS': 'REJEITADO'}, {'COMENTARIO_ID': row['COMENTARIO_ID']}):
-                            st.warning("Comentário rejeitado.")
-                            st.cache_data.clear()
-                            st.rerun()
+    st.subheader("Gerenciamento de Comentários")
+    st.info("A estrutura da tabela 'comentarios' parece estar corrompida ou inconsistente. A funcionalidade de gerenciamento de comentários está desativada para prevenir mais problemas.")
 
 def gerenciar_contatos():
-    st.subheader("Gerenciar Mensagens de Contato")
-    
+    st.subheader("Gerenciamento de Contatos")
     df_contatos = carregar_dados_db('contatos')
-    
+
     if df_contatos.empty:
-        st.info("Nenhuma mensagem de contato recebida.")
+        st.info("Nenhuma mensagem de contato.")
         return
 
-    st.write("Mensagens recebidas através do formulário de contato.")
-    
-    status_filter = st.selectbox("Filtrar por Status", options=['NOVO', 'LIDO', 'RESPONDIDO', 'RESOLVIDO'])
-    
-    df_filtered = df_contatos[df_contatos['STATUS_ATENDIMENTO'] == status_filter]
+    st.dataframe(df_contatos)
 
-    if df_filtered.empty:
-        st.info(f"Nenhuma mensagem com o status '{status_filter}'.")
-    else:
-        for index, row in df_filtered.iterrows():
-            with st.expander(f"De: {row['NOME']} ({row['EMAIL']}) - Assunto: {row['ASSUNTO']}"):
-                st.write(f"**Recebido em:** {row['TIMESTAMP']}")
-                st.write(f"**Telefone:** {row.get('TELEFONE', 'Não informado')}")
-                st.info(f"**Mensagem:**\n\n{row['MENSAGEM']}")
+    st.subheader("Moderar Contato")
+    contato_id = st.selectbox("Selecione o ID do contato", df_contatos['ID'])
+    novo_status = st.selectbox("Selecione o novo status", ['NOVO', 'LIDO', 'RESPONDIDO'])
+    
+    if st.button("Atualizar Status do Contato"):
+        update_record('contatos', {'"STATUS_ATENDIMENTO"': novo_status}, {'"ID"': contato_id})
+        st.success("Status do contato atualizado.")
+        st.rerun()
 
-                new_status = st.selectbox(
-                    "Alterar status para:",
-                    options=['NOVO', 'LIDO', 'RESPONDIDO', 'RESOLVIDO'],
-                    index=['NOVO', 'LIDO', 'RESPONDIDO', 'RESOLVIDO'].index(row['STATUS_ATENDIMENTO']),
-                    key=f"status_contato_{row['ID']}"
-                )
-                if st.button("Atualizar Status", key=f"update_contato_{row['ID']}"):
-                    if update_record('contatos', {'STATUS_ATENDIMENTO': new_status}, {'ID': row['ID']}):
-                        st.success("Status do contato atualizado.")
-                        st.cache_data.clear()
-                        st.rerun()
+    if st.button("Excluir Contato Permanentemente"):
+        delete_record('contatos', {'"ID"': contato_id})
+        st.success("Contato excluído.")
+        st.rerun()
 
 def gerenciar_log_atividades():
-    st.subheader("Log de Atividades dos Usuários")
-    
-    df_log = carregar_dados_db('log_atividades')
-    
-    if df_log.empty:
-        st.info("Nenhum registro de atividade encontrado.")
-        return
-
-    st.write("Logs de ações importantes realizadas pelos usuários no sistema.")
-    
-    st.dataframe(df_log.sort_values(by="TIMESTAMP", ascending=False))
+    st.subheader("Log de Atividades")
+    st.info("A estrutura da tabela 'log_atividades' parece estar corrompida ou inconsistente. A funcionalidade de visualização de logs está desativada.")
 
 # --- CONTROLE PRINCIPAL DA PÁGINA ---
 if 'admin_logged_in' not in st.session_state:

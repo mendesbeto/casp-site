@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 from streamlit_carousel import carousel
@@ -21,24 +20,28 @@ def carregar_dados_db(table_name):
     conn = get_db_connection()
     try:
         df = pd.read_sql_query(f"SELECT * FROM {table_name}", conn)
+        df.columns = [x.lower() for x in df.columns]
         return df
     except Exception as e:
         st.error(f"Erro ao carregar dados da tabela {table_name}: {e}")
         return pd.DataFrame()
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
 @st.cache_data
 def carregar_dados_institucionais():
     conn = get_db_connection()
     try:
         df = pd.read_sql_query("SELECT * FROM institucional LIMIT 1", conn)
+        df.columns = [x.lower() for x in df.columns]
         return df.iloc[0]
     except Exception as e:
         st.error(f"Erro ao carregar dados institucionais: {e}")
         return None
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
 df_convenios = carregar_dados_db('convenios')
 df_noticias = carregar_dados_db('noticias')
@@ -47,7 +50,7 @@ institucional = carregar_dados_institucionais()
 if institucional is not None:
     col_titulo, col_login = st.columns([3, 1])
     with col_titulo:
-        st.image(institucional['LOGO_URL'], width=200)
+        st.image(institucional['logo_url'], width=200)
     with col_login:
         st.page_link("pages/8_Área_do_Membro.py", label="Login do Associado", icon="👤")
     
@@ -71,9 +74,9 @@ if institucional is not None:
 
     with st.container():
         st.header("Nossos Convênios em Destaque")
-        convenios_destaque = df_convenios[df_convenios['DESTAQUE'] == True]
+        convenios_destaque = df_convenios[df_convenios['destaque'] == 1]
         carousel_items = [
-            dict(img=row.IMAGEM_URL, title=row.NOME_CONVENIO, text=row.NOME_CONVENIO)
+            dict(img=row.imagem_url, title=row.nome_convenio, text=row.nome_convenio)
             for row in convenios_destaque.itertuples()
         ]
         if carousel_items:
@@ -103,12 +106,12 @@ if institucional is not None:
 
         with col2:
             st.header("Últimas Notícias")
-            noticia_destaque = df_noticias[df_noticias['DESTAQUE'] == True].sort_values(by="DATA", ascending=False).iloc[0]
+            noticia_destaque = df_noticias[df_noticias['destaque'] == 1].sort_values(by="data", ascending=False).iloc[0]
 
-            st.subheader(noticia_destaque['TITULO'])
-            if pd.notna(noticia_destaque['IMAGEM_URL']):
-                st.image(noticia_destaque['IMAGEM_URL'])
-            st.markdown(noticia_destaque['CONTEUDO'], unsafe_allow_html=True)
+            st.subheader(noticia_destaque['titulo'])
+            if pd.notna(noticia_destaque['imagem_url']):
+                st.image(noticia_destaque['imagem_url'])
+            st.markdown(noticia_destaque['conteudo'], unsafe_allow_html=True)
             st.page_link("pages/3_Notícias.py", label="Ver todas as notícias", icon="📰")
 else:
     st.error("Não foi possível carregar as informações do site.")

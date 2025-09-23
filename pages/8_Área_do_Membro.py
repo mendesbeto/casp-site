@@ -1,78 +1,63 @@
-
 import streamlit as st
 import pandas as pd
-import sqlite3
 from datetime import datetime
-from auth import verify_password, get_user_by_email, get_db_connection
+from auth import verify_password, get_user_by_email, get_db_connection, update_record
 from pdf_utils import gerar_recibo_pdf
 from social_utils import display_social_media_links
 
 display_social_media_links()
-
 st.set_page_config(page_title="Área do Membro", layout="centered")
 
 # --- FUNÇÕES DE BANCO DE DADOS ---
 @st.cache_data
-def carregar_dados_noticias():
+def carregar_dados_db(table_name):
+    """Carrega uma tabela inteira do banco de dados para um DataFrame."""
     conn = get_db_connection()
-    df = pd.read_sql_query("SELECT * FROM noticias", conn)
-    conn.close()
-    df['DATA'] = pd.to_datetime(df['DATA'])
-    return df
-
-@st.cache_data
-def carregar_tag_follows():
-    conn = get_db_connection()
-    df = pd.read_sql_query("SELECT * FROM tag_follows", conn)
-    conn.close()
-    return df
+    try:
+        df = pd.read_sql_query(f'SELECT * FROM "{table_name}"', conn)
+        return df
+    except Exception as e:
+        st.error(f"Erro ao carregar dados da tabela {table_name}: {e}")
+        return pd.DataFrame()
+    finally:
+        if conn:
+            conn.close()
 
 @st.cache_data
 def carregar_dados_institucionais():
     conn = get_db_connection()
-    # Carrega a primeira linha da tabela institucional
-    dados = pd.read_sql_query("SELECT * FROM institucional LIMIT 1", conn).iloc[0]
-    conn.close()
-    return dados
+    try:
+        df = pd.read_sql_query('SELECT * FROM "institucional" LIMIT 1', conn)
+        return df.iloc[0]
+    except Exception as e:
+        st.error(f"Erro ao carregar dados institucionais: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
 
 def carregar_historico_financeiro(user_id):
     conn = get_db_connection()
-    query = "SELECT * FROM financas WHERE USER_ID = ?"
-    df_financas = pd.read_sql_query(query, conn, params=(user_id,))
-    conn.close()
-    return df_financas
+    try:
+        query = 'SELECT * FROM financas WHERE "USER_ID" = %(user_id)s'
+        df_financas = pd.read_sql_query(query, conn, params={"user_id": user_id})
+        return df_financas
+    except Exception as e:
+        st.error(f"Erro ao carregar histórico financeiro: {e}")
+        return pd.DataFrame()
+    finally:
+        if conn:
+            conn.close()
 
 def atualizar_dados_membro(user_id, novos_dados):
     """Atualiza os dados de um membro no banco de dados."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    try:
-        # Constrói a query de atualização dinamicamente
-        set_clause = ", ".join([f"{key} = ?" for key in novos_dados.keys()])
-        params = list(novos_dados.values()) + [user_id]
-        query = f"UPDATE usuarios SET {set_clause} WHERE ID = ?"
-        
-        cursor.execute(query, params)
-        conn.commit()
-        return True
-    except sqlite3.Error as e:
-        st.error(f"Erro de banco de dados: {e}")
-        return False
-    finally:
-        conn.close()
+    dados_para_atualizar = {f'"{k.upper()}"': v for k, v in novos_dados.items()}
+    return update_record('usuarios', dados_para_atualizar, {'"ID"': user_id})
 
 def atualizar_ultimo_acesso(user_id):
-    """Atualiza o campo ULTIMO_ACESSO para o usuário no banco de dados."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    try:
-        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        cursor.execute("UPDATE usuarios SET ULTIMO_ACESSO = ? WHERE ID = ?", (now_str, user_id))
-        conn.commit()
-    except sqlite3.Error as e:
-        print(f"Erro ao atualizar último acesso: {e}") # Log para debug
-    finally:
-        conn.close()
+    """Atualiza o campo ultimo_acesso para o usuário no banco de dados."""
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    update_record('usuarios', {'"ULTIMO_ACESSO"': now_str}, {'"ID"': user_id})
 
 # --- PÁGINAS E LÓGICA DE UI ---
 def pagina_login():
@@ -88,13 +73,19 @@ def pagina_login():
             user = get_user_by_email(email)
 
             if user:
-                # Verifica se a conta está ativa e se a senha está correta
-                if user['STATUS'] == 'ATIVO' and verify_password(senha, user['SENHA_HASH']):
-                    last_login_str = user['ULTIMO_ACESSO']
-                    atualizar_ultimo_acesso(user['ID'])
+                try:
+                    user_dict = dict(user)
+                except (TypeError, ValueError) as e:
+                    st.error(f"Erro ao processar dados do usuário: {e}")
+                    st.error(f"Dados recebidos: {user}")
+                    return
+
+                if user_dict.get('STATUS') == 'ATIVO' and verify_password(senha, user_dict.get('SENHA_HASH')):
+                    last_login_str = user_dict.get('ULTIMO_ACESSO')
+                    atualizar_ultimo_acesso(user_dict['ID'])
 
                     st.session_state['member_logged_in'] = True
-                    st.session_state['member_info'] = dict(user) # Converte sqlite3.Row para dict
+                    st.session_state['member_info'] = user_dict
                     st.session_state['last_login_for_notifications'] = last_login_str
                     st.rerun()
                 else:
@@ -113,12 +104,11 @@ def pagina_perfil():
     
     st.title(f"Bem-vindo(a), {user_info['NOME'].split(' ')[0]}!")
     
-    # --- EXIBIÇÃO DAS NOTIFICAÇÕES ---
     last_login_str = st.session_state.get('last_login_for_notifications')
     if pd.notna(last_login_str) and last_login_str:
         last_login_dt = pd.to_datetime(last_login_str)
-        df_noticias = carregar_dados_noticias()
-        df_follows = carregar_tag_follows()
+        df_noticias = carregar_dados_db('noticias')
+        df_follows = carregar_dados_db('tag_follows')
         
         tags_seguidas = df_follows[df_follows['USER_ID'] == user_info['ID']]['TAG_NAME'].tolist()
         
@@ -135,7 +125,7 @@ def pagina_perfil():
                 with st.container(border=True):
                     st.subheader(f"🔔 Novidades em suas tags seguidas ({len(notificacoes)})")
                     for _, noticia in notificacoes.iterrows():
-                        st.markdown(f"- **[{noticia['TITULO']}](/Notícias)**")
+                        st.markdown(f"- **[{noticia['TITULO']}]({st.page_link('pages/3_Notícias.py')})**")
                 st.divider()
 
     if st.button("Sair"):
@@ -149,7 +139,6 @@ def pagina_perfil():
     with tab_perfil:
         if not st.session_state.edit_mode:
             st.subheader("Seus Dados")
-            # Exibe os dados do dicionário user_info
             st.write(f"**Nome Completo:** {user_info.get('NOME', 'Não informado')}")
             st.write(f"**Email:** {user_info.get('EMAIL', 'Não informado')}")
             st.write(f"**CPF:** {user_info.get('CPF', 'Não informado')}")

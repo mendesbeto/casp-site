@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
@@ -14,29 +13,30 @@ def carregar_classificados():
     """Carrega os dados de classificados do banco de dados."""
     conn = get_db_connection()
     try:
-        df = pd.read_sql_query("SELECT * FROM classificados", conn)
+        df = pd.read_sql_query('SELECT * FROM "classificados"', conn)
         return df
     except Exception as e:
         st.error(f"Erro ao carregar classificados: {e}")
         return pd.DataFrame()
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
 def salvar_classificado(user_id, nome_usuario, titulo, descricao, contato, categoria):
     """Salva um novo classificado com status PENDENTE."""
-    new_id = get_max_id('classificados', 'CLASSIFICADO_ID') + 1
+    new_id = get_max_id('classificados', '"CLASSIFICADO_ID"') + 1
     
     novo_classificado = {
-        'CLASSIFICADO_ID': int(new_id),
-        'USER_ID': user_id,
-        'NOME_USUARIO': nome_usuario,
-        'TITULO': titulo,
-        'DESCRICAO': descricao,
-        'CONTATO': contato,
-        'DATA_CRIACAO': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        'STATUS': 'PENDENTE',
-        'CATEGORIA': categoria,
-        'DESTAQUE': False
+        '"CLASSIFICADO_ID"': str(new_id),
+        '"USER_ID"': user_id,
+        '"NOME_USUARIO"': nome_usuario,
+        '"TITULO"': titulo,
+        '"DESCRICAO"': descricao,
+        '"CONTATO"': contato,
+        '"DATA_CRIACAO"': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        '"STATUS"': 'PENDENTE',
+        '"CATEGORIA"': categoria,
+        '"DESTAQUE"': 'FALSE'
     }
     insert_record('classificados', novo_classificado)
     st.cache_data.clear()
@@ -109,8 +109,8 @@ if search_term:
         anuncios_para_exibir['DESCRICAO'].str.contains(search_term, case=False, na=False)
     ]
 
-anuncios_destaque = anuncios_para_exibir[anuncios_para_exibir['DESTAQUE'] == True]
-anuncios_normais = anuncios_para_exibir[anuncios_para_exibir['DESTAQUE'] == False]
+anuncios_destaque = anuncios_para_exibir[anuncios_para_exibir['DESTAQUE'] == 'TRUE']
+anuncios_normais = anuncios_para_exibir[anuncios_para_exibir['DESTAQUE'] != 'TRUE']
 
 if anuncios_destaque.empty and anuncios_normais.empty:
     if search_term:

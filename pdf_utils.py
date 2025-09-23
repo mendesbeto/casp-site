@@ -51,7 +51,7 @@ def gerar_recibo_pdf(dados_cobranca, dados_usuario, dados_institucionais):
     pdf.cell(0, 10, '______________________________________', 0, 1, 'C')
     pdf.cell(0, 5, f"CNPJ: {dados_institucionais['CNPJ_CPF']}", 0, 1, 'C')
 
-    return bytes(pdf.output(dest='B'))
+    return pdf.output(dest='S').encode('latin-1')
 
 def gerar_contrato_adesao_pdf(dados_usuario, dados_servico, dados_plano, dados_institucionais):
     pdf = PDF(dados_institucionais)
@@ -61,7 +61,7 @@ def gerar_contrato_adesao_pdf(dados_usuario, dados_servico, dados_plano, dados_i
     pdf.cell(0, 10, 'Contrato de Adesão de Associado', 0, 1, 'C')
     pdf.ln(10)
 
-    # --- DADOS DA ASSOCIAÇÃO (CONTRATADA) ---
+    # --- DADOS DA ASSOCIAÇÃO (CONTRATADA) --- 
     pdf.set_font('Arial', 'B', 12)
     pdf.cell(0, 10, 'CONTRATADA:', 0, 1)
     pdf.set_font('Arial', '', 12)
@@ -72,7 +72,7 @@ def gerar_contrato_adesao_pdf(dados_usuario, dados_servico, dados_plano, dados_i
         border=0, align='L')
     pdf.ln(5)
 
-    # --- DADOS DO ASSOCIADO (CONTRATANTE) ---
+    # --- DADOS DO ASSOCIADO (CONTRATANTE) --- 
     pdf.set_font('Arial', 'B', 12)
     pdf.cell(0, 10, 'CONTRATANTE:', 0, 1)
     pdf.set_font('Arial', '', 12)
@@ -84,7 +84,7 @@ def gerar_contrato_adesao_pdf(dados_usuario, dados_servico, dados_plano, dados_i
         border=0, align='L')
     pdf.ln(5)
 
-    # --- OBJETO DO CONTRATO ---
+    # --- OBJETO DO CONTRATO --- 
     pdf.set_font('Arial', 'B', 12)
     pdf.cell(0, 10, '1. OBJETO DO CONTRATO', 0, 1)
     pdf.set_font('Arial', '', 12)
@@ -96,7 +96,7 @@ def gerar_contrato_adesao_pdf(dados_usuario, dados_servico, dados_plano, dados_i
     pdf.multi_cell(0, 7, texto_objeto, border=0, align='J')
     pdf.ln(5)
 
-    # --- SERVIÇO E PLANO ESCOLHIDO ---
+    # --- SERVIÇO E PLANO ESCOLHIDO --- 
     pdf.set_font('Arial', 'B', 12)
     pdf.cell(0, 10, '2. SERVIÇO, PLANO E VALORES', 0, 1)
     pdf.set_font('Arial', 'B', 10)
@@ -121,7 +121,7 @@ def gerar_contrato_adesao_pdf(dados_usuario, dados_servico, dados_plano, dados_i
         pdf.multi_cell(0, 7, f"Nomes: {dados_plano['nomes_adicionais']}", border=0, align='J')
         pdf.ln(5)
 
-    # --- ASSINATURAS ---
+    # --- ASSINATURAS --- 
     pdf.cell(0, 10, f"Data: {datetime.now().strftime('%d/%m/%Y')}", 0, 1, 'C')
     pdf.ln(20)
     
@@ -134,4 +134,4 @@ def gerar_contrato_adesao_pdf(dados_usuario, dados_servico, dados_plano, dados_i
     pdf.cell(0, 5, f"{dados_institucionais['TITULO_SITE']}", 0, 1, 'C')
     pdf.cell(0, 5, "(CONTRATADA)", 0, 1, 'C')
 
-    return bytes(pdf.output(dest='B'))
+    return pdf.output(dest='S').encode('latin-1')

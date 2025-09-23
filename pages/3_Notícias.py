@@ -14,54 +14,55 @@ def carregar_dados_db(table_name):
     """Carrega uma tabela inteira do banco de dados para um DataFrame."""
     conn = get_db_connection()
     try:
-        df = pd.read_sql_query(f"SELECT * FROM {table_name}", conn)
+        df = pd.read_sql_query(f'SELECT * FROM "{table_name}"', conn)
         return df
     except Exception as e:
         st.error(f"Erro ao carregar dados da tabela {table_name}: {e}")
         return pd.DataFrame()
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
 def salvar_like(noticia_id, user_id):
     """Salva um novo like no banco de dados."""
-    new_id = get_max_id('noticia_likes', 'LIKE_ID') + 1
+    new_id = get_max_id('noticia_likes', '"LIKE_ID"') + 1
     new_like = {
-        'LIKE_ID': int(new_id),
-        'NOTICIA_ID': noticia_id,
-        'USER_ID': user_id
+        '"LIKE_ID"': int(new_id),
+        '"NOTICIA_ID"': noticia_id,
+        '"USER_ID"': user_id
     }
     insert_record('noticia_likes', new_like)
     st.cache_data.clear()
 
 def remover_like(noticia_id, user_id):
     """Remove um like do banco de dados."""
-    delete_record('noticia_likes', {'NOTICIA_ID': noticia_id, 'USER_ID': user_id})
+    delete_record('noticia_likes', {'"NOTICIA_ID"': noticia_id, '"USER_ID"': user_id})
     st.cache_data.clear()
 
 def salvar_tag_follows(user_id, tags_a_seguir):
     """Salva as preferências de tags de um usuário, substituindo as antigas."""
-    delete_record('tag_follows', {'USER_ID': user_id})
+    delete_record('tag_follows', {'"USER_ID"': user_id})
     for tag in tags_a_seguir:
-        new_id = get_max_id('tag_follows', 'FOLLOW_ID') + 1
+        new_id = get_max_id('tag_follows', '"FOLLOW_ID"') + 1
         new_follow = {
-            'FOLLOW_ID': int(new_id),
-            'USER_ID': user_id,
-            'TAG_NAME': tag
+            '"FOLLOW_ID"': int(new_id),
+            '"USER_ID"': user_id,
+            '"TAG_NAME"': tag
         }
         insert_record('tag_follows', new_follow)
     st.cache_data.clear()
 
 def salvar_comentario(noticia_id, user_id, nome_usuario, comentario):
     """Salva um novo comentário no banco de dados com status PENDENTE."""
-    new_id = get_max_id('comentarios', 'COMENTARIO_ID') + 1
+    new_id = get_max_id('comentarios', '"COMENTARIO_ID"') + 1
     novo_comentario = {
-        'COMENTARIO_ID': int(new_id),
-        'NOTICIA_ID': noticia_id,
-        'USER_ID': user_id,
-        'NOME_USUARIO': nome_usuario,
-        'COMENTARIO': comentario,
-        'TIMESTAMP': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        'STATUS': 'PENDENTE'
+        '"COMENTARIO_ID"': int(new_id),
+        '"NOTICIA_ID"': noticia_id,
+        '"USER_ID"': user_id,
+        '"NOME_USUARIO"': nome_usuario,
+        '"COMENTARIO"': comentario,
+        '"TIMESTAMP"': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        '"STATUS"': 'PENDENTE'
     }
     insert_record('comentarios', novo_comentario)
 
@@ -143,7 +144,7 @@ if not noticias_publicadas.empty:
                 st.caption(f"Publicado em: {pd.to_datetime(noticia.DATA).strftime('%d/%m/%Y')}")
                 st.markdown(noticia.CONTEUDO, unsafe_allow_html=True)
             
-            if 'TAGS' in noticia and pd.notna(noticia.TAGS):
+            if hasattr(noticia, 'TAGS') and pd.notna(noticia.TAGS):
                 tags = [tag.strip() for tag in noticia.TAGS.split(',') if tag.strip()]
                 st.write(" ".join([f"`#{tag}`" for tag in tags]))
 

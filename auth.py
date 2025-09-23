@@ -29,9 +29,9 @@ def get_user_by_email(email: str):
     conn = get_db_connection()
     if conn is None: return None
     try:
-        query = sqlalchemy.text("SELECT * FROM usuarios WHERE email = :email")
-        result = conn.execute(query, {"email": email}).fetchone()
-        return result
+        query = sqlalchemy.text('SELECT * FROM usuarios WHERE "EMAIL" = :email')
+        result = conn.execute(query, {"email": email})
+        return result.mappings().first()
     finally:
         if conn: conn.close()
 
@@ -40,9 +40,9 @@ def get_user_by_id(user_id: int):
     conn = get_db_connection()
     if conn is None: return None
     try:
-        query = sqlalchemy.text("SELECT * FROM usuarios WHERE \"USER_ID\" = :user_id")
-        result = conn.execute(query, {"user_id": user_id}).fetchone()
-        return result
+        query = sqlalchemy.text('SELECT * FROM usuarios WHERE "ID" = :user_id')
+        result = conn.execute(query, {"user_id": user_id})
+        return result.mappings().first()
     finally:
         if conn: conn.close()
 
@@ -52,10 +52,14 @@ def insert_record(table_name, record_dict):
     if conn is None: return False
     try:
         columns = ', '.join(record_dict.keys())
-        placeholders = ', '.join([f":{key}" for key in record_dict.keys()])
+        sanitized_keys = [key.strip('"') for key in record_dict.keys()]
+        placeholders = ', '.join([f":{key}" for key in sanitized_keys])
         query = sqlalchemy.text(f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders})")
-        conn.execute(query, record_dict)
-        conn.commit()
+        
+        sanitized_dict = {key.strip('"'): value for key, value in record_dict.items()}
+        
+        with conn.begin():
+            conn.execute(query, sanitized_dict)
         return True
     except Exception as e:
         print(f"Erro ao inserir registro: {e}")
@@ -82,14 +86,27 @@ def update_record(table_name, record_dict, where_clause):
     conn = get_db_connection()
     if conn is None: return False
     try:
-        set_clause = ", ".join([f"{key} = :{key}" for key in record_dict.keys()])
-        where_keys = " AND ".join([f'{key} = :{key.replace(" ", "_")}' for key in where_clause.keys()])
+        set_clause_list = []
+        where_clause_list = []
+        params = {}
+
+        for key, value in record_dict.items():
+            sanitized_key = key.strip('"')
+            set_clause_list.append(f'{key} = :{sanitized_key}')
+            params[sanitized_key] = value
+
+        for key, value in where_clause.items():
+            sanitized_key = key.strip('"')
+            where_clause_list.append(f'{key} = :{sanitized_key}_where')
+            params[f'{sanitized_key}_where'] = value
+
+        set_clause = ", ".join(set_clause_list)
+        where_keys = " AND ".join(where_clause_list)
+        
         query = sqlalchemy.text(f"UPDATE {table_name} SET {set_clause} WHERE {where_keys}")
         
-        params = {**record_dict, **where_clause}
-        
-        conn.execute(query, params)
-        conn.commit()
+        with conn.begin():
+            conn.execute(query, params)
         return True
     except Exception as e:
         print(f"Erro ao atualizar registro: {e}")
@@ -102,10 +119,19 @@ def delete_record(table_name, where_clause):
     conn = get_db_connection()
     if conn is None: return False
     try:
-        where_keys = " AND ".join([f"{key} = :{key}" for key in where_clause.keys()])
+        where_clause_list = []
+        params = {}
+
+        for key, value in where_clause.items():
+            sanitized_key = key.strip('"')
+            where_clause_list.append(f'{key} = :{sanitized_key}')
+            params[sanitized_key] = value
+
+        where_keys = " AND ".join(where_clause_list)
         query = sqlalchemy.text(f"DELETE FROM {table_name} WHERE {where_keys}")
-        conn.execute(query, where_clause)
-        conn.commit()
+        
+        with conn.begin():
+            conn.execute(query, params)
         return True
     except Exception as e:
         print(f"Erro ao deletar registro: {e}")
