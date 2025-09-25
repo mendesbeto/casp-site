@@ -1,11 +1,10 @@
-
 import streamlit as st
-import sqlite3
 import secrets
 from datetime import datetime, timedelta
 from social_utils import display_social_media_links
-from auth import hash_password, get_user_by_email, get_db_connection
+from auth import hash_password, get_user_by_email, get_db_connection, update_record
 from email_utils import send_recovery_email
+import sqlalchemy
 
 display_social_media_links()
 st.set_page_config(page_title="Recuperar Senha", layout="centered")
@@ -13,42 +12,33 @@ st.set_page_config(page_title="Recuperar Senha", layout="centered")
 # --- FUNÇÕES DE BANCO DE DADOS ---
 def update_user_token(user_id, token, expiration_date):
     """Atualiza o token de recuperação e a data de expiração de um usuário."""
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor()
-        query = "UPDATE usuarios SET TOKEN_RECUPERACAO = ?, DATA_EXPIRACAO_TOKEN = ? WHERE ID = ?"
-        cursor.execute(query, (token, expiration_date.strftime("%Y-%m-%d %H:%M:%S"), user_id))
-        conn.commit()
-        return True
-    except sqlite3.Error as e:
-        st.error(f"Erro de banco de dados: {e}")
-        return False
-    finally:
-        conn.close()
+    record_to_update = {
+        '"TOKEN_RECUPERACAO"': token,
+        '"DATA_EXPIRACAO_TOKEN"': expiration_date.strftime("%Y-%m-%d %H:%M:%S")
+    }
+    where_clause = {'"ID"': user_id}
+    return update_record('usuarios', record_to_update, where_clause)
 
 def get_user_by_token(token):
     """Busca um usuário pelo token de recuperação."""
     conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM usuarios WHERE TOKEN_RECUPERACAO = ?", (token,))
-    user = cursor.fetchone()
-    conn.close()
-    return user
+    if conn is None: return None
+    try:
+        query = sqlalchemy.text('SELECT * FROM usuarios WHERE "TOKEN_RECUPERACAO" = :token')
+        result = conn.execute(query, {"token": token})
+        return result.mappings().first()
+    finally:
+        if conn: conn.close()
 
 def reset_user_password(user_id, new_password_hash):
     """Redefine a senha do usuário e limpa o token."""
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor()
-        query = "UPDATE usuarios SET SENHA_HASH = ?, TOKEN_RECUPERACAO = NULL, DATA_EXPIRACAO_TOKEN = NULL WHERE ID = ?"
-        cursor.execute(query, (new_password_hash, user_id))
-        conn.commit()
-        return True
-    except sqlite3.Error as e:
-        st.error(f"Erro de banco de dados ao redefinir a senha: {e}")
-        return False
-    finally:
-        conn.close()
+    record_to_update = {
+        '"SENHA_HASH"': new_password_hash,
+        '"TOKEN_RECUPERACAO"': None,
+        '"DATA_EXPIRACAO_TOKEN"': None
+    }
+    where_clause = {'"ID"': user_id}
+    return update_record('usuarios', record_to_update, where_clause)
 
 # --- LÓGICA DA PÁGINA ---
 st.title("🔑 Recuperação de Senha")
