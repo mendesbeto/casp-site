@@ -61,11 +61,11 @@ with st.form("form_request_token"):
             if update_user_token(user['ID'], token, expiration_date):
                 try:
                     email_creds = st.secrets["email_credentials"]
-                    base_url = st.secrets["app_config"]["base_url"]
+                    url = st.secrets["app_config"]["url"]
                     email_config = {
                         "email_address": email_creds["email_address"],
                         "email_password": email_creds["email_password"],
-                        "base_url": base_url
+                        "url": url
                     }
                     if send_recovery_email(email_solicitacao, token, email_config):
                         st.success("✅ Token de recuperação enviado para o seu email. Verifique sua caixa de entrada (e spam).")
